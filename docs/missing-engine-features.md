@@ -186,19 +186,28 @@ Resolved on branch `dev-missing-features`; covered by
       cross the rising threshold: grants the in-progress technology, or settles for gold
       when none. Tracked via new `Settlement.special_persons_produced` (serialized).
 
-### Tier 2 — New subsystems
+### Tier 2 — New subsystems — ✅ DONE
 
-- [ ] **Trades** (§7) — `PROPOSE_/ACCEPT_/REJECT_TRADE` factories + handlers; execute
-      trade effects in `_resolve_trades()`.
-- [ ] **War success → war-fatigue → discontent** (§3.8, §7, §4.5) — track war success
-      from combat, accumulate fatigue, feed contentment.
-- [ ] **Specialists** (§6.5) — `CHANGE_SPECIALIST` command + handler so specialist
-      output and special-person points actually accrue.
-- [ ] **Economic organizations** (§8) — invoke `EconOrgs.found()` (via special person)
-      and `EconOrgs.spread_all()` in the pipeline.
-- [ ] **Intelligence missions** (§7) — covert-mission commands with cost/interception.
-- [ ] **Transport / embarkation** (§5.2) — use `cargo` / `transported_by` so land units
-      can cross deep water.
+Resolved on branch `dev-missing-features`; covered by
+`tests/test_tier2_missing_features.gd` (18 tests).
+
+- [x] **Trades** (§7) — `propose/accept/reject_trade` factories + `SimFacade`
+      handlers; `_execute_trade()` moves gold + techs and applies a peace clause.
+      Trades still expire via `_resolve_trades()` in the world step.
+- [x] **War-fatigue → discontent** (§4.5, §7) — `_accrue_war_fatigue()` charges the
+      losing unit's alliance on each combat; `_update_contentment()` converts pooled
+      fatigue into anger (`war_fatigue_anger_divisor`).
+- [x] **Specialists** (§6.5) — `assign_specialist` command (population-capped); each
+      specialist yields `specialist_commerce` in `_settlement_growth` and is reserved
+      out of tile workers in `_auto_assign_workers`. Feeds special-person points.
+- [x] **Economic organizations** (§8) — `EconOrgs.spread_all()` runs each world step;
+      `_apply_special_person()` seeds an unfounded org via `EconOrgs.found()`.
+- [x] **Intelligence missions** (§7) — `espionage_mission` command spends
+      `intel_mission_cost` points with an `intel_interception_chance`; `steal_tech`
+      and `sabotage` missions implemented.
+- [x] **Transport / embarkation** (§5.2) — `load_unit`/`unload_unit` commands use
+      `cargo`/`transported_by` (capacity-checked); carried units ride with their
+      transport and are excluded from the independent moving stack.
 
 ### Tier 3 — Breadth & depth (larger or lower-frequency)
 

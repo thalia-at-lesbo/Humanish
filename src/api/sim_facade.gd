@@ -204,6 +204,20 @@ func apply_command(cmd: Dictionary) -> bool:
 			return _cmd_mission(cmd)
 		IDs.CommandType.DO_CONTROL:
 			return _cmd_do_control(cmd)
+		IDs.CommandType.PROPOSE_TRADE:
+			return _cmd_propose_trade(cmd)
+		IDs.CommandType.ACCEPT_TRADE:
+			return _cmd_accept_trade(cmd)
+		IDs.CommandType.REJECT_TRADE:
+			return _cmd_reject_trade(cmd)
+		IDs.CommandType.ASSIGN_SPECIALIST:
+			return _cmd_assign_specialist(cmd)
+		IDs.CommandType.ESPIONAGE_MISSION:
+			return _cmd_espionage_mission(cmd)
+		IDs.CommandType.LOAD_UNIT:
+			return _cmd_load_unit(cmd)
+		IDs.CommandType.UNLOAD_UNIT:
+			return _cmd_unload_unit(cmd)
 	return false
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -237,7 +251,13 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 	var fx: int = int(cmd["from_x"]); var fy: int = int(cmd["from_y"])
 	var tx: int = int(cmd["to_x"]);   var ty: int = int(cmd["to_y"])
 
-	var moving_units: Array = Stack.at(_gs.units, fx, fy, player_id)
+	var all_here: Array = Stack.at(_gs.units, fx, fy, player_id)
+	# Carried units are not independent stack members; they ride with their
+	# transport via the cargo-follow logic below (§5.2).
+	var moving_units: Array = []
+	for mu in all_here:
+		if mu.transported_by < 0:
+			moving_units.append(mu)
 	if moving_units.empty():
 		return false
 
@@ -288,6 +308,11 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 			u.has_moved = true
 			u.stationary_turns = 0
 			u.entrenchment = 0
+			# Carried units ride along with their transport (§5.2).
+			for cid in u.cargo:
+				var carried: Unit = _gs.get_unit(cid)
+				if carried != null:
+					carried.x = sx; carried.y = sy
 
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
@@ -465,6 +490,206 @@ func _cmd_build_improvement(cmd: Dictionary) -> bool:
 	u.movement_left = 0
 	return true
 
+# ── Trades (§7) ───────────────────────────────────────────────────────────────
+
+func _cmd_propose_trade(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var from_alliance: Alliance = _gs.get_player_alliance(p.id)
+	var target_aid: int = int(cmd.get("target_alliance_id", -1))
+	var to_alliance: Alliance = _gs.get_alliance(target_aid)
+	if from_alliance == null or to_alliance == null or from_alliance.id == target_aid:
+		return false
+	var duration: int = int(cmd.get("duration", -1))
+	if duration <= 0:
+		duration = _db.get_constant("trade_default_duration", 20)
+	from_alliance.pending_trades.append({
+		"id": _gs.next_trade_id(),
+		"proposer_player_id": p.id,
+		"from_alliance": from_alliance.id,
+		"to_alliance": target_aid,
+		"give": cmd.get("give", {}).duplicate(true),
+		"receive": cmd.get("receive", {}).duplicate(true),
+		"peace": bool(cmd.get("peace", false)),
+		"expires_turn": _gs.turn_number + duration
+	})
+	if not from_alliance.has_contact_with(target_aid):
+		from_alliance.contacts.append(target_aid)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	return true
+
+func _cmd_accept_trade(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var trade_id: int = int(cmd.get("trade_id", -1))
+	for alliance in _gs.alliances:
+		for i in range(alliance.pending_trades.size()):
+			var t: Dictionary = alliance.pending_trades[i]
+			if int(t.get("id", -1)) == trade_id and int(t.get("to_alliance", -1)) == p.alliance_id:
+				_execute_trade(t, p)
+				alliance.pending_trades.remove(i)
+				_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+				return true
+	return false
+
+func _cmd_reject_trade(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var trade_id: int = int(cmd.get("trade_id", -1))
+	for alliance in _gs.alliances:
+		for i in range(alliance.pending_trades.size()):
+			var t: Dictionary = alliance.pending_trades[i]
+			if int(t.get("id", -1)) == trade_id and int(t.get("to_alliance", -1)) == p.alliance_id:
+				alliance.pending_trades.remove(i)
+				return true
+	return false
+
+# Move gold/techs between the proposer and accepter and apply any peace clause.
+func _execute_trade(t: Dictionary, accepter: Player) -> void:
+	var proposer: Player = _gs.get_player(int(t.get("proposer_player_id", -1)))
+	var give: Dictionary = t.get("give", {})       # proposer -> accepter
+	var receive: Dictionary = t.get("receive", {}) # accepter -> proposer
+	if proposer != null:
+		var gg: int = int(give.get("gold", 0))
+		var rg: int = int(receive.get("gold", 0))
+		proposer.treasury -= gg; accepter.treasury += gg
+		accepter.treasury -= rg; proposer.treasury += rg
+		for tech in give.get("techs", []):
+			if not accepter.has_tech(tech):
+				accepter.technologies.append(tech)
+		for tech in receive.get("techs", []):
+			if not proposer.has_tech(tech):
+				proposer.technologies.append(tech)
+	if bool(t.get("peace", false)):
+		var a_from: Alliance = _gs.get_alliance(int(t.get("from_alliance", -1)))
+		var a_to: Alliance = _gs.get_alliance(int(t.get("to_alliance", -1)))
+		if a_from != null and a_to != null:
+			a_from.at_war_with.erase(a_to.id)
+			a_to.at_war_with.erase(a_from.id)
+
+# ── Specialists (§6.5) ────────────────────────────────────────────────────────
+
+func _cmd_assign_specialist(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var s: Settlement = _gs.get_settlement(int(cmd.get("settlement_id", -1)))
+	if s == null or s.owner_player_id != p.id:
+		return false
+	var stype: String = str(cmd.get("specialist_type", ""))
+	var count: int = int(cmd.get("count", 0))
+	if stype == "" or count < 0:
+		return false
+	# Total specialists may not exceed the settlement's population.
+	var others: int = 0
+	for k in s.specialists:
+		if k != stype:
+			others += int(s.specialists[k])
+	if others + count > s.population:
+		return false
+	if count == 0:
+		s.specialists.erase(stype)
+	else:
+		s.specialists[stype] = count
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	return true
+
+# ── Espionage (§7) ────────────────────────────────────────────────────────────
+
+func _cmd_espionage_mission(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var target_aid: int = int(cmd.get("target_alliance_id", -1))
+	var target_alliance: Alliance = _gs.get_alliance(target_aid)
+	if target_alliance == null or target_aid == p.alliance_id:
+		return false
+	var cost: int = _db.get_constant("intel_mission_cost", 100)
+	var have: int = int(p.intel_points.get(target_aid, 0))
+	if have < cost:
+		return false
+	p.intel_points[target_aid] = have - cost
+	# Interception spends the points but fails the mission.
+	if _gs.rng.rand_bool_percent(_db.get_constant("intel_interception_chance", 25)):
+		_add_notification("Espionage mission intercepted.", "info")
+		return true
+	match str(cmd.get("mission", "")):
+		"steal_tech":
+			_espionage_steal_tech(p, target_alliance)
+		"sabotage":
+			_espionage_sabotage(target_alliance)
+	return true
+
+func _espionage_steal_tech(thief: Player, target: Alliance) -> void:
+	for pid in target.member_player_ids:
+		var victim: Player = _gs.get_player(pid)
+		if victim == null:
+			continue
+		for tech in victim.technologies:
+			if not thief.has_tech(tech):
+				thief.technologies.append(tech)
+				_add_notification("Stole technology: " + str(tech), "major")
+				return
+
+func _espionage_sabotage(target: Alliance) -> void:
+	for s in _gs.settlements:
+		var owner: Player = _gs.get_player(s.owner_player_id)
+		if owner != null and owner.alliance_id == target.id:
+			s.production_store = s.production_store / 2
+			_add_notification("Sabotaged production in " + s.name, "major")
+			return
+
+# ── Transport / embarkation (§5.2) ────────────────────────────────────────────
+
+func _cmd_load_unit(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var u: Unit = _gs.get_unit(int(cmd.get("unit_id", -1)))
+	var t: Unit = _gs.get_unit(int(cmd.get("transport_id", -1)))
+	if u == null or t == null or u.owner_player_id != p.id or t.owner_player_id != p.id:
+		return false
+	if _db.get_unit(u.unit_type_id).get("domain", "land") != "land":
+		return false
+	var cap: int = int(_db.get_unit(t.unit_type_id).get("transport_capacity", 0))
+	if cap <= 0 or t.cargo.size() >= cap:
+		return false
+	if _gs.map.distance(u.x, u.y, t.x, t.y) > 1:
+		return false
+	u.x = t.x; u.y = t.y
+	u.transported_by = t.id
+	u.movement_left = 0; u.has_moved = true
+	if not (u.id in t.cargo):
+		t.cargo.append(u.id)
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	return true
+
+func _cmd_unload_unit(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var u: Unit = _gs.get_unit(int(cmd.get("unit_id", -1)))
+	if u == null or u.owner_player_id != p.id or u.transported_by < 0:
+		return false
+	var tx: int = int(cmd.get("target_x", u.x))
+	var ty: int = int(cmd.get("target_y", u.y))
+	if _gs.map.distance(u.x, u.y, tx, ty) > 1:
+		return false
+	var tile: Tile = _gs.map.get_tile(tx, ty)
+	if tile == null or _db.get_terrain(tile.terrain_id).get("domain", "land") != "land":
+		return false
+	var t: Unit = _gs.get_unit(u.transported_by)
+	if t != null:
+		t.cargo.erase(u.id)
+	u.transported_by = -1
+	u.x = tx; u.y = ty
+	u.movement_left = 0; u.has_moved = true
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	return true
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _apply_combat_result(attacker: Unit, defender: Unit,
@@ -484,6 +709,12 @@ func _apply_combat_result(attacker: Unit, defender: Unit,
 		_award_promotions(attacker)
 	if result["defender_survived"]:
 		_award_promotions(defender)
+
+	# War-fatigue: the losing side's alliance accrues fatigue (§4.5, §7).
+	if not result["defender_survived"] and result["attacker_survived"]:
+		_accrue_war_fatigue(defender, attacker)
+	elif not result["attacker_survived"] and result["defender_survived"]:
+		_accrue_war_fatigue(attacker, defender)
 
 	if not result["attacker_survived"]:
 		Stack.remove_unit(_gs.units, attacker.id)
@@ -543,6 +774,19 @@ func _pick_promotion(u: Unit) -> String:
 		if ok:
 			return pid
 	return ""
+
+# The defeated unit's alliance accumulates war-fatigue against the victor's
+# alliance. Wild forces (no player/alliance) are skipped.
+func _accrue_war_fatigue(loser: Unit, winner: Unit) -> void:
+	var lp: Player = _gs.get_player(loser.owner_player_id)
+	var wp: Player = _gs.get_player(winner.owner_player_id)
+	if lp == null or wp == null:
+		return
+	var la: Alliance = _gs.get_alliance(lp.alliance_id)
+	if la == null:
+		return
+	var amt: int = _db.get_constant("war_fatigue_per_loss", 5)
+	la.war_fatigue[wp.alliance_id] = int(la.war_fatigue.get(wp.alliance_id, 0)) + amt
 
 func _get_next_player_index(current_player_id: int) -> int:
 	for i in range(_gs.players.size()):

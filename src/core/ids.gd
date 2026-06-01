@@ -48,7 +48,12 @@ enum CommandType {
     MISSION_BOMBARD = 29,
     MISSION_AIRLIFT = 30,
     # UI controls (§3.1)
-    DO_CONTROL = 31
+    DO_CONTROL = 31,
+    # Tier 2 subsystems
+    ASSIGN_SPECIALIST = 32,
+    ESPIONAGE_MISSION = 33,
+    LOAD_UNIT = 34,
+    UNLOAD_UNIT = 35
 }
 
 # Win condition types

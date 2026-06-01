@@ -73,7 +73,7 @@ func test_disorder_triggers_when_discontent_ge_population() -> void:
 	var p = gs.get_player(1)
 	s.negative_sentiment = 5
 	s.positive_sentiment = 0
-	TurnEngine._update_contentment(s, p, gs.db)
+	TurnEngine._update_contentment(gs, s, p, gs.db)
 	if s.discontented >= s.population:
 		assert_true(s.in_disorder, "Should be in disorder")
 	else:

@@ -39,6 +39,7 @@ var _next_unit_id: int = 1
 var _next_settlement_id: int = 1
 var _next_alliance_id: int = 1
 var _next_player_id: int = 1
+var _next_trade_id: int = 1
 
 func next_unit_id() -> int:
 	var id: int = _next_unit_id
@@ -58,6 +59,11 @@ func next_alliance_id() -> int:
 func next_player_id() -> int:
 	var id: int = _next_player_id
 	_next_player_id += 1
+	return id
+
+func next_trade_id() -> int:
+	var id: int = _next_trade_id
+	_next_trade_id += 1
 	return id
 
 # ── Lookups ───────────────────────────────────────────────────────────────────
@@ -147,7 +153,8 @@ func serialize() -> Dictionary:
 		"_next_unit_id": _next_unit_id,
 		"_next_settlement_id": _next_settlement_id,
 		"_next_alliance_id": _next_alliance_id,
-		"_next_player_id": _next_player_id
+		"_next_player_id": _next_player_id,
+		"_next_trade_id": _next_trade_id
 	}
 
 static func deserialize(d: Dictionary, db_ref):
@@ -179,4 +186,5 @@ static func deserialize(d: Dictionary, db_ref):
 	gs._next_settlement_id = int(d.get("_next_settlement_id", 1))
 	gs._next_alliance_id = int(d.get("_next_alliance_id", 1))
 	gs._next_player_id = int(d.get("_next_player_id", 1))
+	gs._next_trade_id = int(d.get("_next_trade_id", 1))
 	return gs
