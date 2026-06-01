@@ -14,6 +14,7 @@ var _pace_btn: OptionButton
 var _difficulty_btn: OptionButton
 var _seed_edit: LineEdit
 var _player_count_spin: SpinBox
+var _error_label: Label
 
 func init(db, on_start) -> void:
 	_db = db
@@ -121,13 +122,39 @@ func _build_ui() -> void:
 	start_btn.connect("pressed", self, "_on_start_pressed")
 	vbox.add_child(start_btn)
 
+	# Validation error message (hidden until a rule is violated)
+	_error_label = Label.new()
+	_error_label.modulate = Color(1.0, 0.4, 0.4)
+	_error_label.visible = false
+	vbox.add_child(_error_label)
+
 func _on_player_count_changed(value: float) -> void:
 	var count: int = int(value)
 	for i in range(_player_rows.size()):
 		_player_rows[i]["row"].visible = i < count
 
+# Returns the 1-based player numbers that have no society selected (index 0 of the
+# option button is the "— No Society —" placeholder). Empty = all valid.
+func _players_missing_society(count: int) -> Array:
+	var missing: Array = []
+	for i in range(count):
+		if _player_rows[i]["society_btn"].selected <= 0:
+			missing.append(i + 1)
+	return missing
+
 func _on_start_pressed() -> void:
 	var count: int = int(_player_count_spin.value)
+
+	# Bug 1: every player must pick a society before the game can start.
+	var missing: Array = _players_missing_society(count)
+	if not missing.empty():
+		var who: String = ""
+		for n in missing:
+			who += ("" if who == "" else ", ") + str(n)
+		_show_error("Select a society for player(s): " + who)
+		return
+	_clear_error()
+
 	var player_configs: Array = []
 	for i in range(count):
 		var row_data: Dictionary = _player_rows[i]
@@ -164,3 +191,12 @@ func _on_start_pressed() -> void:
 
 	if _on_start_callback != null:
 		_on_start_callback.call_func(_facade, _db)
+
+func _show_error(msg: String) -> void:
+	if _error_label != null:
+		_error_label.text = msg
+		_error_label.visible = true
+
+func _clear_error() -> void:
+	if _error_label != null:
+		_error_label.visible = false

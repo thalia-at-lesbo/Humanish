@@ -197,3 +197,37 @@ func test_starting_units_on_passable_land() -> void:
 		var ter = db.get_terrain(gs.map.get_tile(u.x, u.y).terrain_id)
 		assert_eq(ter.get("domain", "land"), "land", "Units must spawn on land")
 		assert_false(ter.get("impassable", false), "Units must spawn on passable tiles")
+
+# ── Bug 1: Start Game blocked when a player has "No Society" ────────────────────
+
+var _bug1_started = false
+func _bug1_on_start(_facade, _db) -> void:
+	_bug1_started = true
+
+func test_bug1_blocks_start_until_every_player_picks_a_society() -> void:
+	var db = _db()
+	var screen = load("res://scenes/setup/setup_screen.gd").new()
+	screen.anchor_right = 1.0
+	screen.anchor_bottom = 1.0
+	add_child_autofree(screen)
+	screen.init(db, funcref(self, "_bug1_on_start"))
+	_bug1_started = false
+
+	# Default 2 players. Leave player 1 at "— No Society —" (index 0).
+	screen._player_rows[0]["society_btn"].select(0)
+	screen._player_rows[1]["society_btn"].select(1)
+	assert_eq(screen._players_missing_society(2), [1],
+		"Player 1 should be flagged as missing a society")
+
+	screen._on_start_pressed()
+	assert_false(_bug1_started,
+		"Start must be blocked while any player has no society")
+	assert_true(screen._error_label.visible, "An error message should be shown")
+
+	# Give player 1 a society too → start should now proceed.
+	screen._player_rows[0]["society_btn"].select(1)
+	assert_eq(screen._players_missing_society(2), [],
+		"No players should be missing a society now")
+	screen._on_start_pressed()
+	assert_true(_bug1_started,
+		"Start proceeds once all players have chosen a society")
