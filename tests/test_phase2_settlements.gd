@@ -151,5 +151,5 @@ func test_wellbeing_deficit_non_negative() -> void:
 	var gs = _make_gs()
 	var s = _make_settlement(gs, 1, 5, 5)
 	s.population = 3
-	TurnEngine._update_wellbeing(s, gs.db)
+	TurnEngine._update_wellbeing(gs, s, gs.db)
 	assert_true(s.wellbeing_deficit >= 0, "Wellbeing deficit is non-negative")

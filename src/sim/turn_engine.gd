@@ -196,7 +196,7 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	s.output_commerce   = total_commerce
 
 	# Wellbeing: deficit reduces food surplus
-	_update_wellbeing(s, db)
+	_update_wellbeing(gs, s, db)
 	var effective_food: int = total_food - s.wellbeing_deficit
 	var consumed: int = s.population * 2
 	var surplus: int = effective_food - consumed
@@ -223,7 +223,7 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	# Contentment update
 	_update_contentment(gs, s, player, db)
 
-static func _update_wellbeing(s: Settlement, db: DataDB) -> void:
+static func _update_wellbeing(gs: GameState, s: Settlement, db: DataDB) -> void:
 	var pos: int = 0
 	var neg: int = s.population  # base negative from population
 	for struct_id in s.structures:
@@ -233,9 +233,23 @@ static func _update_wellbeing(s: Settlement, db: DataDB) -> void:
 	# Adopted belief wellbeing (§8)
 	if s.belief_id != "":
 		pos += int(db.beliefs.get(s.belief_id, {}).get("health_bonus", 0))
+	# Fresh water from an adjacent water body or a river/oasis feature (§4.6)
+	if _has_fresh_water(gs, s, db):
+		pos += db.get_constant("fresh_water_health", 2)
 	s.wellbeing_positive = pos
 	s.wellbeing_negative = neg
 	s.wellbeing_deficit = max(0, neg - pos)
+
+# A settlement has fresh water if its tile carries a river/oasis feature or any
+# neighbour is a water tile (§4.6).
+static func _has_fresh_water(gs: GameState, s: Settlement, db: DataDB) -> bool:
+	var tile: Tile = gs.map.get_tile(s.x, s.y)
+	if tile != null and (tile.feature_id == "river" or tile.feature_id == "oasis"):
+		return true
+	for nb in gs.map.neighbours8(s.x, s.y):
+		if db.get_terrain(nb.terrain_id).get("domain", "land") != "land":
+			return true
+	return false
 
 static func _update_contentment(gs: GameState, s: Settlement, player: Player, db: DataDB) -> void:
 	var pos: int = 0
@@ -252,6 +266,22 @@ static func _update_contentment(gs: GameState, s: Settlement, player: Player, db
 	# Adopted belief comfort (§8)
 	if s.belief_id != "":
 		pos += int(db.beliefs.get(s.belief_id, {}).get("happiness_bonus", 0))
+
+	# Garrison comfort: stationed military units reassure the populace (§4.5)
+	var garrison: int = 0
+	for u in gs.units:
+		if u.owner_player_id == player.id and u.x == s.x and u.y == s.y:
+			if db.get_unit(u.unit_type_id).get("classification", "") != "civilian":
+				garrison += 1
+	if garrison > 0:
+		var g_bonus: int = garrison * db.get_constant("garrison_happiness_per_unit", 1)
+		var g_cap: int = db.get_constant("garrison_happiness_cap", 3)
+		pos += g_cap if g_bonus > g_cap else g_bonus
+
+	# Overcrowding anger above a comfortable size (§4.5)
+	var crowd_thresh: int = db.get_constant("overcrowding_threshold", 6)
+	if s.population > crowd_thresh:
+		neg_anger += (s.population - crowd_thresh) * db.get_constant("overcrowding_anger_per_pop", 3)
 
 	# Policy anger
 	for cat in player.policies:

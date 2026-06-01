@@ -286,3 +286,34 @@ func test_policy_max_research_cap_enforced() -> void:
 		"Research above the policy cap is rejected")
 	assert_true(f.apply_command(Commands.set_sliders(1, 50, 50, 0, 0)),
 		"Research at the cap is accepted")
+
+# ── Item 8: Contentment & wellbeing breadth (§4.5/§4.6) ────────────────────────
+
+func test_garrison_raises_contentment() -> void:
+	var gs = _make_gs()
+	var s = _settlement(gs, 1, 5, 5, 4)
+	var p = gs.get_player(1)
+	TurnEngine._update_contentment(gs, s, p, gs.db)
+	var base_pos: int = s.positive_sentiment
+	_unit(gs, "warrior", 1, 5, 5)  # garrison
+	TurnEngine._update_contentment(gs, s, p, gs.db)
+	assert_gt(s.positive_sentiment, base_pos, "A garrison raises positive sentiment")
+
+func test_overcrowding_adds_anger() -> void:
+	var gs = _make_gs()
+	var p = gs.get_player(1)
+	var small = _settlement(gs, 1, 5, 5, 5)   # below threshold 6
+	TurnEngine._update_contentment(gs, small, p, gs.db)
+	var small_neg: int = small.negative_sentiment
+	var big = _settlement(gs, 1, 9, 9, 20)    # well above threshold
+	TurnEngine._update_contentment(gs, big, p, gs.db)
+	assert_gt(big.negative_sentiment, small_neg, "Overcrowding raises negative sentiment")
+
+func test_fresh_water_improves_wellbeing() -> void:
+	var gs = _make_gs()
+	var land_s = _settlement(gs, 1, 2, 2, 3)   # surrounded by grassland
+	TurnEngine._update_wellbeing(gs, land_s, gs.db)
+	var dry_pos: int = land_s.wellbeing_positive
+	gs.map.get_tile(3, 2).terrain_id = "coast"  # adjacent water
+	TurnEngine._update_wellbeing(gs, land_s, gs.db)
+	assert_gt(land_s.wellbeing_positive, dry_pos, "Adjacent fresh water improves wellbeing")
