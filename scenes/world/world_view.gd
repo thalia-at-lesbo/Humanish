@@ -68,6 +68,11 @@ func _process(delta: float) -> void:
 		update()
 
 	if _facade.get_dirty().is_dirty(IDs.DirtyRegion.WORLD):
+		# Refresh fog for the active player so moving a unit or founding a city
+		# reveals the newly-seen tiles (and re-hides ones left behind).
+		var fog = get_node_or_null("FogLayer")
+		if fog != null and fog.has_method("rebuild"):
+			fog.rebuild(_facade.get_state().current_player_id)
 		update()
 		_facade.get_dirty().clear(IDs.DirtyRegion.WORLD)
 

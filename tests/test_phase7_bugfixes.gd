@@ -532,3 +532,41 @@ func test_unit_panel_omits_open_city_button() -> void:
 		"A selected unit must not show an Open City button (no city is selected)")
 	# It should still show the unit's own actions.
 	assert_true(panel.get_child_count() > 0, "The unit panel should still show unit info")
+
+# ── Bug: fog of war doesn't update on movement / settling ──────────────────────
+
+func test_fog_updates_when_world_changes() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 91, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = load("res://src/sim/unit.gd").new()
+	u.id = gs.next_unit_id(); u.unit_type_id = "warrior"; u.owner_player_id = pid
+	u.x = 5; u.y = 5
+	gs.units.append(u)
+
+	var wv = load("res://scenes/world/world_view.tscn").instance()
+	add_child_autofree(wv)
+	wv.init(facade)
+	var fog = wv.get_node_or_null("FogLayer")
+	assert_not_null(fog, "world view should have a fog layer")
+	fog.init(facade)  # main.gd initialises the fog layer separately
+
+	# A world change (e.g. a move) marks WORLD dirty; processing it rebuilds fog.
+	facade.get_dirty().set_dirty(IDs.DirtyRegion.WORLD)
+	wv._process(0.0)
+	assert_true(fog.get_visible_tiles().has("5,5"),
+		"Fog should reveal the tile the unit stands on")
+
+	# Move the unit; the newly-seen tile must become visible after processing.
+	u.x = 12; u.y = 9
+	facade.get_dirty().set_dirty(IDs.DirtyRegion.WORLD)
+	wv._process(0.0)
+	assert_true(fog.get_visible_tiles().has("12,9"),
+		"Fog should reveal the unit's new location after it moves")
+	assert_false(fog.get_visible_tiles().has("5,5"),
+		"The tile left behind should no longer be in current sight")
