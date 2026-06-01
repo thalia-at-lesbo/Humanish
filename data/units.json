@@ -79,6 +79,26 @@
     "can_build": true,
     "upgrades_to": null
   },
+  "scout": {
+    "id": "scout",
+    "domain": "land",
+    "base_strength": 4,
+    "movement": 300,
+    "cost": 25,
+    "upkeep": 0,
+    "tech_required": null,
+    "resource_required": null,
+    "classification": "recon",
+    "tags": ["explore", "ignore_terrain_cost"],
+    "first_strikes": 0,
+    "combat_limit": 0,
+    "withdrawal_chance": 25,
+    "transport_capacity": 0,
+    "cargo_capacity": 0,
+    "can_found": false,
+    "can_build": false,
+    "upgrades_to": "warrior"
+  },
   "galley": {
     "id": "galley",
     "domain": "sea",

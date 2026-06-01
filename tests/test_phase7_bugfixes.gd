@@ -137,3 +137,63 @@ func test_start_positions_are_land_and_spread() -> void:
 		var ter = gs.db.get_terrain(gs.map.get_tile(int(s[0]), int(s[1])).terrain_id)
 		assert_eq(ter.get("domain", "land"), "land", "Start tile must be land")
 		assert_false(ter.get("impassable", false), "Start tile must be passable")
+
+# ── Bug 4+5: starting units ────────────────────────────────────────────────────
+
+func test_scout_unit_exists() -> void:
+	var db = _db()
+	assert_false(db.get_unit("scout").empty(), "A 'scout' unit type must exist")
+
+func test_every_society_has_required_starting_units() -> void:
+	var db = _db()
+	var required = ["settler", "worker", "scout", "warrior", "archer"]
+	for sid in db.get_societies():
+		var su = db.get_society(sid).get("starting_units", [])
+		for r in required:
+			assert_true(r in su,
+				"Society '%s' starting_units must include a %s" % [sid, r])
+
+func test_player_with_society_spawns_units() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	var annunaki = db.get_society("annunaki")
+	facade.setup(db, 17, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": annunaki.get("leader_id", ""),
+			"traits": annunaki.get("traits", []),
+			"starting_gold": 120,
+			"starting_units": annunaki.get("starting_units", [])}],
+		["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	var mine = []
+	for u in gs.units:
+		if u.owner_player_id == pid:
+			mine.append(u.unit_type_id)
+	assert_eq(mine.size(), annunaki.get("starting_units", []).size(),
+		"Player should spawn exactly its society's starting units")
+	assert_true("settler" in mine and "scout" in mine and "archer" in mine,
+		"Spawned units should include the core opening types")
+
+func test_no_starting_units_when_config_omits_them() -> void:
+	# Headless/test configs without a society spawn no units (keeps end-turn ready).
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 3, "tiny", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	assert_eq(facade.get_state().units.size(), 0,
+		"A config with no starting_units should spawn no units")
+
+func test_starting_units_on_passable_land() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 88, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": "enlil", "traits": [],
+			"starting_gold": 120,
+			"starting_units": ["settler", "warrior"]}],
+		["time"])
+	var gs = facade.get_state()
+	for u in gs.units:
+		var ter = db.get_terrain(gs.map.get_tile(u.x, u.y).terrain_id)
+		assert_eq(ter.get("domain", "land"), "land", "Units must spawn on land")
+		assert_false(ter.get("impassable", false), "Units must spawn on passable tiles")

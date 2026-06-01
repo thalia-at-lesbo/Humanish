@@ -21,6 +21,7 @@
   "upkeep_size_scale": 1,
   "starting_techs": ["stone_age"],
   "default_research": "bronze_age",
+  "default_starting_units": ["settler", "worker", "scout", "warrior", "archer"],
   "insolvency_grace_turns": 1,
   "pollution_degradation_chance": 5,
   "exploration_reward_weights": [30, 20, 20, 15, 10, 5],

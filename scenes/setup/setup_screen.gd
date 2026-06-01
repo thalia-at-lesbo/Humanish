@@ -136,17 +136,21 @@ func _on_start_pressed() -> void:
 		var leader_id: String = ""
 		var traits: Array = []
 		var starting_gold: int = 100
+		var default_units: Array = _db.constants.get("default_starting_units", [])
+		var starting_units: Array = default_units.duplicate()
 		if society_idx >= 0:
 			var sid: String = row_data["society_ids"][society_idx]
 			var society: Dictionary = _db.get_society(sid)
 			leader_id = society.get("leader_id", "")
 			traits = society.get("traits", []).duplicate()
 			starting_gold = int(society.get("starting_gold", 100))
+			starting_units = society.get("starting_units", default_units).duplicate()
 		player_configs.append({
 			"name": row_data["name_edit"].text,
 			"leader_id": leader_id,
 			"traits": traits,
-			"starting_gold": starting_gold
+			"starting_gold": starting_gold,
+			"starting_units": starting_units
 		})
 
 	var world_size_id: String = _world_size_btn.get_item_text(_world_size_btn.selected)

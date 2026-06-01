@@ -91,6 +91,52 @@ func setup(db: DataDB, seed_val: int, world_size_id: String, pace_id: String,
 	if not _gs.players.empty():
 		_gs.current_player_id = _gs.players[0].id
 
+	# Place each player's opening units (data-driven via cfg["starting_units"]).
+	# Players with no starting units (e.g. headless test configs) get none, so
+	# the engine stays generic and society→unit mapping lives in the caller.
+	_place_all_starting_units(player_configs)
+
+func _place_all_starting_units(player_configs: Array) -> void:
+	var starts: Array = MapGen.find_start_positions(_gs.map, _db, _gs.players.size())
+	for i in range(_gs.players.size()):
+		if i >= player_configs.size() or i >= starts.size():
+			break
+		var su: Array = player_configs[i].get("starting_units", [])
+		if su.empty():
+			continue
+		_spawn_starting_units(_gs.players[i].id, int(starts[i][0]), int(starts[i][1]), su)
+
+# Spawn a list of unit type ids for a player, fanned out across the start tile
+# and its passable land neighbours so they do not all hide on one square.
+func _spawn_starting_units(player_id: int, sx: int, sy: int, unit_types: Array) -> void:
+	var tiles: Array = [[sx, sy]]
+	for nb in _gs.map.neighbours8(sx, sy):
+		var ter: Dictionary = _db.get_terrain(nb.terrain_id)
+		if ter.get("domain", "land") == "land" and not ter.get("impassable", false):
+			tiles.append([nb.x, nb.y])
+
+	for k in range(unit_types.size()):
+		var slot: Array = tiles[k % tiles.size()]
+		_spawn_unit(str(unit_types[k]), player_id, int(slot[0]), int(slot[1]))
+
+# Create a single unit of the given type for a player at (x, y), pulling stats
+# from data/units.json. Returns the new unit id (-1 if the type is unknown).
+func _spawn_unit(unit_type_id: String, player_id: int, x: int, y: int) -> int:
+	var udata: Dictionary = _db.get_unit(unit_type_id)
+	if udata.empty():
+		return -1
+	var u := Unit.new()
+	u.id = _gs.next_unit_id()
+	u.unit_type_id = unit_type_id
+	u.owner_player_id = player_id
+	u.x = x; u.y = y
+	u.base_strength = int(udata.get("base_strength", 0))
+	u.movement_total = int(udata.get("movement", 200))
+	u.movement_left = u.movement_total
+	_gs.units.append(u)
+	emit_signal("unit_created", u.id)
+	return u.id
+
 # Load from a save string.
 func load_save(json_str: String) -> bool:
 	var gs := SaveLoad.load_from_string(json_str, _db)
