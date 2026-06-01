@@ -68,6 +68,13 @@ func _ready() -> void:
 				pass_screen.init(_facade)
 			hsm.set_pass_screen(pass_screen)
 
+	# Build fog for the opening player so the map starts hidden (only their own
+	# surroundings are revealed) rather than showing the whole world up front.
+	if world_view != null:
+		var start_fog = world_view.get_node_or_null("FogLayer")
+		if start_fog != null:
+			start_fog.rebuild(_facade.get_state().current_player_id)
+
 func _init_node(path: String, args: Array) -> void:
 	var node = get_node_or_null(path)
 	if node != null and node.has_method("init"):
