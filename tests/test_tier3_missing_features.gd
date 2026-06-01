@@ -175,3 +175,34 @@ func test_airlift_limited_by_range() -> void:
 	assert_true(f._cmd_mission({"type": IDs.CommandType.MISSION_AIRLIFT, "player_id": 1,
 		"unit_id": fighter.id, "target_x": 7, "target_y": 6}),
 		"Within range the airlift succeeds")
+
+# ── Item 5: Subordination / tributaries (§7) ───────────────────────────────────
+
+func test_become_tributary_records_relationship() -> void:
+	var gs = _make_gs()
+	var f = _facade(gs)
+	gs.alliances[0].at_war_with = [2]; gs.alliances[1].at_war_with = [1]
+	# Player 2's alliance (2) submits to alliance 1.
+	assert_true(f._cmd_set_subordination({"player_id": 2, "overlord_alliance_id": 1}),
+		"Subordination command succeeds")
+	assert_eq(gs.alliances[1].is_subordinate_to, 1, "Subordinate records its overlord")
+	assert_true(2 in gs.alliances[0].tributaries, "Overlord records the tributary")
+	assert_false(gs.alliances[0].is_at_war_with(2), "War between them ends on submission")
+
+func test_tributary_joins_overlord_wars() -> void:
+	var gs = _make_gs()
+	var f = _facade(gs)
+	gs.alliances[0].at_war_with = [9]  # overlord at war with alliance 9
+	f._cmd_set_subordination({"player_id": 2, "overlord_alliance_id": 1})
+	assert_true(gs.alliances[1].is_at_war_with(9), "Tributary inherits the overlord's wars")
+
+func test_tribute_transfers_treasury() -> void:
+	var gs = _make_gs()
+	var f = _facade(gs)
+	gs.get_player(2).treasury = 100
+	gs.get_player(1).treasury = 0
+	f._cmd_set_subordination({"player_id": 2, "overlord_alliance_id": 1})
+	TurnEngine._collect_tribute(gs)
+	var pct: int = gs.db.get_constant("tribute_pct", 10)
+	assert_eq(gs.get_player(2).treasury, 100 - 10, "Tributary pays tribute")
+	assert_eq(gs.get_player(1).treasury, 10, "Overlord receives the tribute")

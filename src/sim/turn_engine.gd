@@ -20,6 +20,9 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	# world step independent of the per-phase hooks.
 	EconOrgs.spread_all(gs, gs.rng)
 
+	# Tributaries pay tribute to their overlords (§7).
+	_collect_tribute(gs)
+
 	# 3. Per-tile upkeep across the whole map
 	if not hooks.run(IDs.Phase.WORLD_TILE_UPKEEP, gs):
 		_tile_upkeep(gs)
@@ -595,6 +598,27 @@ static func _resolve_trades(gs: GameState) -> void:
 				expired.append(i)
 		for i in range(expired.size() - 1, -1, -1):
 			alliance.pending_trades.remove(expired[i])
+
+# Tributary alliances pay a share of their treasury to their overlord (§7).
+static func _collect_tribute(gs: GameState) -> void:
+	var pct: int = gs.db.get_constant("tribute_pct", 10)
+	for sub in gs.alliances:
+		if sub.is_subordinate_to < 0:
+			continue
+		var overlord: Alliance = gs.get_alliance(sub.is_subordinate_to)
+		if overlord == null or overlord.member_player_ids.empty():
+			continue
+		var recipient: Player = gs.get_player(overlord.member_player_ids[0])
+		for pid in sub.member_player_ids:
+			var p: Player = gs.get_player(pid)
+			if p == null:
+				continue
+			var tribute: int = Fixed.scale(p.treasury, pct)
+			if tribute <= 0:
+				continue
+			p.treasury -= tribute
+			if recipient != null:
+				recipient.treasury += tribute
 
 # Diplomatic assembly (§3.7): each alliance's voting weight is the population it
 # governs. The tally feeds the diplomatic win condition (§10).

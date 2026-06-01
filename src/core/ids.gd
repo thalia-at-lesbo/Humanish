@@ -53,7 +53,8 @@ enum CommandType {
     ASSIGN_SPECIALIST = 32,
     ESPIONAGE_MISSION = 33,
     LOAD_UNIT = 34,
-    UNLOAD_UNIT = 35
+    UNLOAD_UNIT = 35,
+    SET_SUBORDINATION = 36
 }
 
 # Win condition types

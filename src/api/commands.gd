@@ -204,6 +204,13 @@ static func espionage_mission(player_id: int, target_alliance_id: int,
 		"mission": mission
 	}
 
+static func set_subordination(player_id: int, overlord_alliance_id: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.SET_SUBORDINATION,
+		"player_id": player_id,
+		"overlord_alliance_id": overlord_alliance_id
+	}
+
 static func load_unit(player_id: int, unit_id: int, transport_id: int) -> Dictionary:
 	return {
 		"type": IDs.CommandType.LOAD_UNIT,

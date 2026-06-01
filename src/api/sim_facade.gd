@@ -218,6 +218,8 @@ func apply_command(cmd: Dictionary) -> bool:
 			return _cmd_load_unit(cmd)
 		IDs.CommandType.UNLOAD_UNIT:
 			return _cmd_unload_unit(cmd)
+		IDs.CommandType.SET_SUBORDINATION:
+			return _cmd_set_subordination(cmd)
 	return false
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -585,6 +587,31 @@ func _execute_trade(t: Dictionary, accepter: Player) -> void:
 		if a_from != null and a_to != null:
 			a_from.at_war_with.erase(a_to.id)
 			a_to.at_war_with.erase(a_from.id)
+
+# ── Subordination (§7) ────────────────────────────────────────────────────────
+
+# The acting player's alliance becomes a tributary of the overlord alliance:
+# their war ends, the subordinate joins the overlord's wars, and tribute is paid
+# each world step.
+func _cmd_set_subordination(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var mine: Alliance = _gs.get_player_alliance(p.id)
+	var overlord_id: int = int(cmd.get("overlord_alliance_id", -1))
+	var overlord: Alliance = _gs.get_alliance(overlord_id)
+	if mine == null or overlord == null or mine.id == overlord_id:
+		return false
+	mine.is_subordinate_to = overlord_id
+	if not (mine.id in overlord.tributaries):
+		overlord.tributaries.append(mine.id)
+	mine.at_war_with.erase(overlord_id)
+	overlord.at_war_with.erase(mine.id)
+	for enemy_aid in overlord.at_war_with:
+		if not (enemy_aid in mine.at_war_with):
+			mine.at_war_with.append(enemy_aid)
+	_dirty.set_dirty(IDs.DirtyRegion.FULL_SCREENS)
+	return true
 
 # ── Specialists (§6.5) ────────────────────────────────────────────────────────
 

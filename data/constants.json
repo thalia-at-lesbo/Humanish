@@ -29,6 +29,7 @@
   "air_strike_default_range": 4,
   "interception_range": 2,
   "interception_chance": 50,
+  "tribute_pct": 10,
   "upkeep_distance_scale": 1,
   "upkeep_size_scale": 1,
   "starting_techs": ["stone_age"],
