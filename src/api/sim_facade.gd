@@ -248,17 +248,24 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 	if path.empty() and not (fx == tx and fy == ty):
 		return false
 
-	# Move one step at a time consuming movement
+	# Move one step at a time, consuming each unit's movement allowance (which is
+	# set per unit class from data/units.json). The stack stops once its slowest
+	# member is out of points; a unit with any points left may always enter one
+	# more tile, so movement is bounded but never zero.
 	for step in path:
+		var min_left: int = lead.movement_left
+		for u in moving_units:
+			if u.movement_left < min_left:
+				min_left = u.movement_left
+		if min_left <= 0:
+			break
+
 		var sx: int = int(step[0]); var sy: int = int(step[1])
 		var step_cost: int = Pathfinding._move_cost(
 			_gs.map.get_tile(sx, sy), _db,
 			_db.get_unit(lead.unit_type_id).get("domain", "land"))
 
 		for u in moving_units:
-			if u.movement_left < Fixed.MOVE_PRECISION and u.movement_left > 0:
-				# Guarantee at least one tile per turn
-				step_cost = u.movement_left
 			u.movement_left = max(0, u.movement_left - step_cost)
 			u.x = sx; u.y = sy
 			u.has_moved = true

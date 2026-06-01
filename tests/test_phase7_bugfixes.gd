@@ -570,3 +570,38 @@ func test_fog_updates_when_world_changes() -> void:
 		"Fog should reveal the unit's new location after it moves")
 	assert_false(fog.get_visible_tiles().has("5,5"),
 		"The tile left behind should no longer be in current sight")
+
+# ── Bug: units had unlimited movement; it must be class-based ──────────────────
+
+func _move_distance_for(unit_type, sx, sy, tx, ty):
+	# Spawn a unit of the given class on an open grassland map and try to move it
+	# far in a single command; return how many tiles it actually advanced.
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 7, "standard", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = load("res://src/sim/unit.gd").new()
+	u.id = gs.next_unit_id(); u.unit_type_id = unit_type; u.owner_player_id = pid
+	u.x = sx; u.y = sy
+	var udata = db.get_unit(unit_type)
+	u.movement_total = int(udata.get("movement", 200))
+	u.movement_left = u.movement_total
+	gs.units.append(u)
+	facade.apply_command(Commands.move_stack(pid, sx, sy, tx, ty))
+	# Chebyshev distance moved (4-dir path → equals tiles advanced along a row).
+	return gs.map.distance(sx, sy, u.x, u.y)
+
+func test_movement_is_bounded_by_class() -> void:
+	# Warrior: movement 200 = 2 tiles per turn on flat land.
+	var warrior_dist = _move_distance_for("warrior", 5, 5, 20, 5)
+	assert_eq(warrior_dist, 2, "Warrior should advance exactly 2 tiles, not the full path")
+	# Scout: movement 300 = 3 tiles, and faster than a warrior.
+	var scout_dist = _move_distance_for("scout", 5, 5, 20, 5)
+	assert_eq(scout_dist, 3, "Scout should advance exactly 3 tiles per turn")
+	assert_true(scout_dist > warrior_dist, "Scout should out-range the warrior")
