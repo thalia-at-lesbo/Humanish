@@ -105,6 +105,7 @@ func test_flanking_damages_stacked_unit() -> void:
 	var before: int = def2.health
 	var facade = load("res://src/api/sim_facade.gd").new()
 	facade._gs = gs
+	facade._db = gs.db
 	facade._apply_combat_result(atk, def1, result)
 	assert_lt(def2.health, before, "Stacked unit takes flanking damage when its defender falls")
 

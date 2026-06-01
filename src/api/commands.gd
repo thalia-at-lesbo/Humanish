@@ -159,6 +159,68 @@ static func mission_airlift(player_id: int, unit_id: int,
 		"target_x": target_x, "target_y": target_y
 	}
 
+# ── Trades (§7) ───────────────────────────────────────────────────────────────
+
+# `give`/`receive` are Dictionaries like {"gold": int, "techs": [String]}; `peace`
+# clears any war between the two alliances when the deal is accepted.
+static func propose_trade(player_id: int, target_alliance_id: int,
+		give: Dictionary, receive: Dictionary, peace: bool = false,
+		duration: int = -1) -> Dictionary:
+	return {
+		"type": IDs.CommandType.PROPOSE_TRADE,
+		"player_id": player_id,
+		"target_alliance_id": target_alliance_id,
+		"give": give.duplicate(true),
+		"receive": receive.duplicate(true),
+		"peace": peace,
+		"duration": duration
+	}
+
+static func accept_trade(player_id: int, trade_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.ACCEPT_TRADE, "player_id": player_id, "trade_id": trade_id}
+
+static func reject_trade(player_id: int, trade_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.REJECT_TRADE, "player_id": player_id, "trade_id": trade_id}
+
+# ── Specialists, espionage, transport (§5.2, §6.5, §7) ────────────────────────
+
+static func assign_specialist(player_id: int, settlement_id: int,
+		specialist_type: String, count: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.ASSIGN_SPECIALIST,
+		"player_id": player_id,
+		"settlement_id": settlement_id,
+		"specialist_type": specialist_type,
+		"count": count
+	}
+
+static func espionage_mission(player_id: int, target_alliance_id: int,
+		mission: String) -> Dictionary:
+	# mission: "steal_tech" or "sabotage"
+	return {
+		"type": IDs.CommandType.ESPIONAGE_MISSION,
+		"player_id": player_id,
+		"target_alliance_id": target_alliance_id,
+		"mission": mission
+	}
+
+static func load_unit(player_id: int, unit_id: int, transport_id: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.LOAD_UNIT,
+		"player_id": player_id,
+		"unit_id": unit_id,
+		"transport_id": transport_id
+	}
+
+static func unload_unit(player_id: int, unit_id: int,
+		target_x: int, target_y: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.UNLOAD_UNIT,
+		"player_id": player_id,
+		"unit_id": unit_id,
+		"target_x": target_x, "target_y": target_y
+	}
+
 # ── Controls (§3.1) ───────────────────────────────────────────────────────────
 
 static func do_control(player_id: int, ctrl_type: int,

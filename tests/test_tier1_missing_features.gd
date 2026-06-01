@@ -183,10 +183,10 @@ func test_belief_adds_happiness() -> void:
 	var gs = _make_gs()
 	var s = _settlement(gs, 1, 5, 5)
 	s.population = 5
-	TurnEngine._update_contentment(s, gs.get_player(1), gs.db)
+	TurnEngine._update_contentment(gs, s, gs.get_player(1), gs.db)
 	var base_pos: int = s.positive_sentiment
 	s.belief_id = "sun_faith"  # happiness_bonus: 1
-	TurnEngine._update_contentment(s, gs.get_player(1), gs.db)
+	TurnEngine._update_contentment(gs, s, gs.get_player(1), gs.db)
 	assert_gt(s.positive_sentiment, base_pos, "An adopted belief raises positive sentiment")
 
 # ── 5. Special-person production ───────────────────────────────────────────────
@@ -208,12 +208,15 @@ func test_special_person_settles_for_gold_when_no_research() -> void:
 	var p = gs.get_player(1)
 	p.current_research_id = ""
 	p.treasury = 0
+	# Pre-found every econ org so the special person falls through to the gold path.
+	for org_id in gs.db.econ_orgs:
+		gs.founded_econ_orgs[org_id] = 99
 	var s = _settlement(gs, 1, 5, 5)
 	s.special_person_threshold = 10
 	s.specialists = {"merchant": 12}
 	TurnEngine._special_person_progress(gs, s)
 	assert_eq(s.special_persons_produced, 1, "A special person is produced")
-	assert_gt(p.treasury, 0, "With no research, the special person settles for gold")
+	assert_gt(p.treasury, 0, "With no research and all orgs founded, the special person settles for gold")
 
 func test_special_person_threshold_rises() -> void:
 	var gs = _make_gs()

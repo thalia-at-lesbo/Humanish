@@ -16,6 +16,10 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	if not hooks.run(IDs.Phase.WORLD_ADVANCE_ALLIANCES, gs):
 		_advance_alliances(gs)
 
+	# Economic organizations spread across settlements (§8). Cheap; runs each
+	# world step independent of the per-phase hooks.
+	EconOrgs.spread_all(gs, gs.rng)
+
 	# 3. Per-tile upkeep across the whole map
 	if not hooks.run(IDs.Phase.WORLD_TILE_UPKEEP, gs):
 		_tile_upkeep(gs)
@@ -178,6 +182,12 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	total_prod     += org_delta[1]
 	total_commerce += org_delta[2]
 
+	# Specialist economic output (§6.5): assigned specialists yield commerce.
+	var spec_count: int = 0
+	for spec_type in s.specialists:
+		spec_count += int(s.specialists[spec_type])
+	total_commerce += spec_count * db.get_constant("specialist_commerce", 3)
+
 	s.output_food       = total_food
 	s.output_production = total_prod
 	s.output_commerce   = total_commerce
@@ -208,7 +218,7 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 			s.population -= 1
 
 	# Contentment update
-	_update_contentment(s, player, db)
+	_update_contentment(gs, s, player, db)
 
 static func _update_wellbeing(s: Settlement, db: DataDB) -> void:
 	var pos: int = 0
@@ -224,7 +234,7 @@ static func _update_wellbeing(s: Settlement, db: DataDB) -> void:
 	s.wellbeing_negative = neg
 	s.wellbeing_deficit = max(0, neg - pos)
 
-static func _update_contentment(s: Settlement, player: Player, db: DataDB) -> void:
+static func _update_contentment(gs: GameState, s: Settlement, player: Player, db: DataDB) -> void:
 	var pos: int = 0
 	var neg_anger: int = 0  # anger percentage points
 
@@ -249,6 +259,14 @@ static func _update_contentment(s: Settlement, player: Player, db: DataDB) -> vo
 	# Rush penalty
 	if s.rush_anger_turns > 0:
 		neg_anger += 20
+
+	# War-fatigue anger from the player's alliance (§4.5, §7)
+	var fa: Alliance = gs.get_player_alliance(player.id)
+	if fa != null:
+		var fatigue_total: int = 0
+		for k in fa.war_fatigue:
+			fatigue_total += int(fa.war_fatigue[k])
+		neg_anger += fatigue_total / max(1, db.get_constant("war_fatigue_anger_divisor", 4))
 
 	# Convert anger percentage to negative sentiment citizens
 	var anger_div: int = db.get_constant("anger_divisor", 100)
@@ -373,8 +391,14 @@ static func _apply_special_person(gs: GameState, s: Settlement) -> void:
 		player.technologies.append(player.current_research_id)
 		player.current_research_id = ""
 		player.research_store = 0
-	else:
-		player.treasury += gs.db.get_constant("special_person_settle_gold", 100)
+		return
+	# Seed an economic organization if one is unfounded and this settlement is free.
+	if s.econ_org_id == "":
+		for org_id in gs.db.econ_orgs:
+			if not gs.founded_econ_orgs.has(org_id):
+				EconOrgs.found(org_id, s, gs)
+				return
+	player.treasury += gs.db.get_constant("special_person_settle_gold", 100)
 
 # Per-turn healing for a stationary unit, by location and healing promotions
 # (§5.6). Caps at full health; never heals on a turn the unit moved or fought
@@ -524,7 +548,13 @@ static func _auto_assign_workers(gs: GameState, player: Player) -> void:
 	for s in gs.settlements:
 		if s.owner_player_id != player.id:
 			continue
-		var workers_needed: int = s.effective_workers()
+		# Citizens working as specialists are not available to work tiles.
+		var spec_count: int = 0
+		for spec_type in s.specialists:
+			spec_count += int(s.specialists[spec_type])
+		var workers_needed: int = s.effective_workers() - spec_count
+		if workers_needed < 0:
+			workers_needed = 0
 		s.worked_tiles = []
 		# Gather candidate tiles owned by this player.
 		var candidates := []
