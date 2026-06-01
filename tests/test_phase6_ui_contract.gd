@@ -46,6 +46,9 @@ func _place_city(facade, player_id, x, y):
 func test_dirty_flags_set_by_move_stack() -> void:
 	var f = _make_facade(1)
 	var gs = f.get_state()
+	# Guarantee passable land for the move (the generated map may place water here).
+	gs.map.get_tile(2, 2).terrain_id = "grassland"
+	gs.map.get_tile(3, 2).terrain_id = "grassland"
 	var uid = _place_unit(f, gs.players[0].id, "warrior", 2, 2)
 	gs.current_player_id = gs.players[0].id
 	f.apply_command(Commands.move_stack(gs.players[0].id, 2, 2, 3, 2))

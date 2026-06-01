@@ -57,6 +57,9 @@ func setup(db: DataDB, seed_val: int, world_size_id: String, pace_id: String,
 		bool(ws.get("wrap_x", true)),
 		bool(ws.get("wrap_y", false))
 	)
+	# Populate the blank grid with a varied sample map. Uses gs.rng so the result
+	# is deterministic for the seed and is captured by save/load (tiles serialize).
+	MapGen.generate(_gs.map, db, _gs.rng)
 
 	# Create players and alliances
 	var difficulty: Dictionary = db.get_difficulty(difficulty_id)

@@ -84,6 +84,11 @@ _global_script_classes=[ {
 "language": "GDScript",
 "path": "res://src/world/influence.gd"
 }, {
+"base": "",
+"class": "MapGen",
+"language": "GDScript",
+"path": "res://src/world/map_gen.gd"
+}, {
 "base": "Reference",
 "class": "Pathfinding",
 "language": "GDScript",
@@ -200,6 +205,7 @@ _global_script_class_icons={
 "Hooks": "",
 "IDs": "",
 "Influence": "",
+"MapGen": "",
 "Pathfinding": "",
 "Player": "",
 "Pollution": "",
