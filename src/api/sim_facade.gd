@@ -709,7 +709,7 @@ func _cmd_unload_unit(cmd: Dictionary) -> bool:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _apply_combat_result(attacker: Unit, defender: Unit,
-		result: Dictionary) -> void:
+		result: Dictionary, advance: bool = true) -> void:
 	attacker.health = int(result["attacker_health_after"])
 	defender.health = int(result["defender_health_after"])
 
@@ -736,8 +736,8 @@ func _apply_combat_result(attacker: Unit, defender: Unit,
 		Stack.remove_unit(_gs.units, attacker.id)
 	if not result["defender_survived"]:
 		Stack.remove_unit(_gs.units, defender.id)
-		# Attacker may advance
-		if result["attacker_survived"]:
+		# Attacker may advance (bombard/air strikes pass advance = false)
+		if result["attacker_survived"] and advance:
 			attacker.x = defender.x
 			attacker.y = defender.y
 
@@ -803,6 +803,33 @@ func _accrue_war_fatigue(loser: Unit, winner: Unit) -> void:
 		return
 	var amt: int = _db.get_constant("war_fatigue_per_loss", 5)
 	la.war_fatigue[wp.alliance_id] = int(la.war_fatigue.get(wp.alliance_id, 0)) + amt
+
+# An enemy fighter near the target may intercept an inbound air strike. Returns
+# true if the strike is aborted (the bomber was engaged), resolving the air-to-air
+# combat as a side effect (§5.2).
+func _resolve_interception(bomber: Unit, tx: int, ty: int, player_id: int) -> bool:
+	var reach: int = _db.get_constant("interception_range", 2)
+	var interceptor: Unit = null
+	var best_d: int = 999
+	for u in _gs.units:
+		if u.owner_player_id == player_id:
+			continue
+		if _db.get_unit(u.unit_type_id).get("domain", "") != "air":
+			continue
+		if u.owner_player_id != -2 and not _gs.are_at_war(player_id, u.owner_player_id):
+			continue
+		var d: int = _gs.map.distance(tx, ty, u.x, u.y)
+		if d <= reach and d < best_d:
+			interceptor = u; best_d = d
+	if interceptor == null:
+		return false
+	if not _gs.rng.rand_bool_percent(_db.get_constant("interception_chance", 50)):
+		return false
+	# The interceptor engages the bomber (no advance for either side).
+	var ir: Dictionary = Combat.resolve(interceptor, bomber, _gs, _gs.rng)
+	_apply_combat_result(interceptor, bomber, ir, false)
+	emit_signal("combat_resolved", ir)
+	return true
 
 # True if a hostile unit (wild, or an enemy at war) occupies a tile adjacent to
 # (x, y). Used to apply zones of control (§5.2).
@@ -919,16 +946,34 @@ func _cmd_mission(cmd: Dictionary) -> bool:
 		IDs.CommandType.MISSION_BOMBARD:
 			var tx: int = int(cmd.get("target_x", -1))
 			var ty: int = int(cmd.get("target_y", -1))
+			var is_air: bool = _db.get_unit(u.unit_type_id).get("domain", "land") == "air"
+			if is_air:
+				# Air strikes reach within range; an interceptor may shoot the
+				# bomber down before it strikes (§5.2).
+				var reach: int = int(_db.get_unit(u.unit_type_id).get("air_range",
+					_db.get_constant("air_strike_default_range", 4)))
+				if _gs.map.distance(u.x, u.y, tx, ty) > reach:
+					return false
+				if _resolve_interception(u, tx, ty, player_id):
+					u.has_moved = true; u.movement_left = 0
+					return true  # intercepted: mission aborted
 			var target: Unit = Stack.get_defender(_gs.units, tx, ty, player_id, _gs)
 			if target == null:
 				return false
 			var result: Dictionary = Combat.resolve(u, target, _gs, _gs.rng)
-			_apply_combat_result(u, target, result)
+			# Bombard / air strike never advances onto the target tile.
+			_apply_combat_result(u, target, result, false)
 			emit_signal("combat_resolved", result)
 			u.has_moved = true
 		IDs.CommandType.MISSION_AIRLIFT:
 			var tx2: int = int(cmd.get("target_x", u.x))
 			var ty2: int = int(cmd.get("target_y", u.y))
+			# Air units fly limited-range missions rather than teleporting (§5.2).
+			if _db.get_unit(u.unit_type_id).get("domain", "land") == "air":
+				var reach2: int = int(_db.get_unit(u.unit_type_id).get("air_range",
+					_db.get_constant("air_strike_default_range", 4)))
+				if _gs.map.distance(u.x, u.y, tx2, ty2) > reach2:
+					return false
 			u.x = tx2; u.y = ty2
 			u.has_moved = true
 			u.movement_left = 0

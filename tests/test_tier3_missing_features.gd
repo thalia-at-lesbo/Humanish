@@ -139,3 +139,39 @@ func test_zone_of_control_halts_movement() -> void:
 	f._cmd_move_stack({"player_id": 1, "from_x": 3, "from_y": 5, "to_x": 12, "to_y": 5})
 	assert_eq(u.x, 7, "Unit halts on the tile adjacent to the hostile unit")
 	assert_eq(u.movement_left, 0, "Zone of control spends remaining movement")
+
+# ── Item 4: Air units (§5.2) ───────────────────────────────────────────────────
+
+func test_air_strike_hits_without_advancing() -> void:
+	var gs = _make_gs()
+	var f = _facade(gs)
+	gs.players[1].alliance_id = 2  # ensure at-war target
+	gs.alliances[0].at_war_with = [2]; gs.alliances[1].at_war_with = [1]
+	var fighter = _unit(gs, "fighter", 1, 5, 5)
+	var target = _unit(gs, "warrior", 2, 8, 5)  # within air_range 4
+	target.base_strength = 1; target.health = 1
+	f._cmd_mission({"type": IDs.CommandType.MISSION_BOMBARD, "player_id": 1,
+		"unit_id": fighter.id, "target_x": 8, "target_y": 5})
+	assert_eq(fighter.x, 5, "Bomber does not advance onto the target tile")
+	assert_eq(fighter.y, 5, "Bomber stays at its base position")
+
+func test_air_strike_out_of_range_rejected() -> void:
+	var gs = _make_gs()
+	var f = _facade(gs)
+	gs.alliances[0].at_war_with = [2]; gs.alliances[1].at_war_with = [1]
+	var fighter = _unit(gs, "fighter", 1, 5, 5)
+	var target = _unit(gs, "warrior", 2, 15, 5)  # distance 10 > air_range 4
+	assert_false(f._cmd_mission({"type": IDs.CommandType.MISSION_BOMBARD, "player_id": 1,
+		"unit_id": fighter.id, "target_x": 15, "target_y": 5}),
+		"A target beyond air range cannot be struck")
+
+func test_airlift_limited_by_range() -> void:
+	var gs = _make_gs()
+	var f = _facade(gs)
+	var fighter = _unit(gs, "fighter", 1, 5, 5)
+	assert_false(f._cmd_mission({"type": IDs.CommandType.MISSION_AIRLIFT, "player_id": 1,
+		"unit_id": fighter.id, "target_x": 19, "target_y": 19}),
+		"Air units cannot airlift beyond their range")
+	assert_true(f._cmd_mission({"type": IDs.CommandType.MISSION_AIRLIFT, "player_id": 1,
+		"unit_id": fighter.id, "target_x": 7, "target_y": 6}),
+		"Within range the airlift succeeds")
