@@ -485,3 +485,50 @@ func test_move_stack_command_succeeds_on_open_map() -> void:
 	gs.units.append(u)
 	var ok = facade.apply_command(Commands.move_stack(pid, 2, 2, 3, 2))
 	assert_true(ok, "Moving a unit one tile on open land should succeed")
+
+# ── Bug: "Open City" button shown for a unit when no city is selected ──────────
+
+func _count_buttons_named(node, text):
+	var n = 0
+	for c in node.get_children():
+		if c is Button and c.text == text:
+			n += 1
+	return n
+
+func test_unit_panel_omits_open_city_button() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 81, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+
+	# A city and a (garrisoned) warrior on the same tile.
+	var s = load("res://src/sim/settlement.gd").new()
+	s.id = gs.next_settlement_id(); s.name = "Cap"; s.owner_player_id = pid
+	s.x = 5; s.y = 5; s.population = 1
+	gs.settlements.append(s)
+	var w = load("res://src/sim/unit.gd").new()
+	w.id = gs.next_unit_id(); w.unit_type_id = "warrior"; w.owner_player_id = pid
+	w.x = 5; w.y = 5
+	gs.units.append(w)
+
+	# Sanity: the (right-click) flyout still offers Open City on that tile.
+	var has_open = false
+	for it in facade.get_flyout_menu(5, 5):
+		if int(it.get("action_id", -1)) == IDs.ControlType.OPEN_CITY_SCREEN:
+			has_open = true
+	assert_true(has_open, "Flyout should still offer Open City on a city tile")
+
+	# But the unit selection panel must not render an Open City button.
+	var panel = load("res://scenes/hud/selection_panel.gd").new()
+	add_child_autofree(panel)
+	panel.init(facade, null)
+	facade.select_unit(w.id)
+	panel.rebuild()
+	assert_eq(_count_buttons_named(panel, "Open City"), 0,
+		"A selected unit must not show an Open City button (no city is selected)")
+	# It should still show the unit's own actions.
+	assert_true(panel.get_child_count() > 0, "The unit panel should still show unit info")

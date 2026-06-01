@@ -43,9 +43,13 @@ func _build_unit_panel(unit_id: int, gs) -> void:
 	move_lbl.text = "MP: " + str(u.movement_left) + "/" + str(u.movement_total)
 	add_child(move_lbl)
 
-	# Action buttons from flyout menu
+	# Action buttons from flyout menu. Skip the "Open City" action: that belongs
+	# to a selected city, not a unit that merely shares the tile with one —
+	# otherwise it lingers on screen with no city actually selected.
 	var menu: Array = _facade.get_flyout_menu(u.x, u.y)
 	for item in menu:
+		if int(item.get("action_id", -1)) == IDs.ControlType.OPEN_CITY_SCREEN:
+			continue
 		var btn: Button = Button.new()
 		btn.text = str(item.get("label", ""))
 		btn.connect("pressed", self, "_on_action_pressed", [item])
@@ -98,5 +102,8 @@ func _on_open_city(_city_id: int) -> void:
 		_facade.get_state().current_player_id, IDs.ControlType.OPEN_CITY_SCREEN))
 
 func _clear_children() -> void:
+	# Remove from the tree immediately (queue_free alone is deferred, which can
+	# leave stale buttons rendered for a frame after the selection changes).
 	for child in get_children():
+		remove_child(child)
 		child.queue_free()
