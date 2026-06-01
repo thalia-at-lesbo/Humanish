@@ -55,3 +55,32 @@ func test_setup_seeds_starting_tech_and_research() -> void:
 	var p = facade.get_state().players[0]
 	assert_true(p.has_tech("stone_age"), "Players start knowing stone_age")
 	assert_eq(p.current_research_id, "bronze_age", "Default research target is bronze_age")
+
+# ── Bug 10: 4-item civic system ────────────────────────────────────────────────
+
+func test_civics_all_four_present() -> void:
+	var db = _db()
+	var pols = db.policies.get("policies", {})
+	for cid in ["communism", "anarcho_communism", "anarcho_capitalism", "fascism"]:
+		assert_true(pols.has(cid), "Civic '%s' must exist" % cid)
+		assert_eq(str(pols[cid].get("category", "")), "civic",
+			"Civic '%s' is in the 'civic' category" % cid)
+
+func test_civics_category_registered() -> void:
+	var db = _db()
+	assert_true("civic" in db.policies.get("categories", []),
+		"'civic' must be a registered policy category")
+
+func test_set_civic_policy_applies() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 7, "tiny", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 100}],
+		["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var ok = facade.apply_command(Commands.set_policy(pid, "civic", "fascism"))
+	assert_true(ok, "Selecting the fascism civic should be accepted")
+	assert_eq(gs.players[0].policies.get("civic", ""), "fascism",
+		"The civic category should now hold fascism")
