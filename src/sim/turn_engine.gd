@@ -139,7 +139,7 @@ static func settlement_step(gs: GameState, s: Settlement,
 
 	# Culture accumulation + spread
 	if not hooks.run(IDs.Phase.SETTLEMENT_CULTURE, gs, {"settlement_id": s.id}):
-		_settlement_culture(gs, s)
+		_settlement_culture(gs, s, player)
 
 	# Belief/affiliation processing
 	if not hooks.run(IDs.Phase.SETTLEMENT_BELIEFS, gs, {"settlement_id": s.id}):
@@ -372,12 +372,17 @@ static func _complete_item(gs: GameState, s: Settlement,
 				gs.endgame_project_stages[alliance_id] = 0
 			gs.endgame_project_stages[alliance_id] += 1
 
-static func _settlement_culture(gs: GameState, s: Settlement) -> void:
+static func _settlement_culture(gs: GameState, s: Settlement, player: Player) -> void:
 	var db: DataDB = gs.db
 	var thresholds: Array = db.constants.get("culture_ring_thresholds",
 		[10, 30, 60, 100, 150, 210, 280, 360, 450, 550])
 
-	s.culture_total += s.output_commerce  # culture comes from commerce channel (simplified)
+	# Culture is the culture slice of the economic split, not raw commerce (§4.7,
+	# §6.2). Players with no settlement owner default to the whole commerce value.
+	var culture_out: int = s.output_commerce
+	if player != null:
+		culture_out = player.split_commerce(s.output_commerce)[2]
+	s.culture_total += culture_out
 
 	# Ring expansion
 	var ring: int = 1
@@ -389,8 +394,8 @@ static func _settlement_culture(gs: GameState, s: Settlement) -> void:
 	ring = min(ring, thresholds.size())
 	s.culture_ring = ring
 
-	# Spread cultural influence
-	Influence.spread(gs.map, s.x, s.y, s.output_commerce, ring, s.owner_player_id, db)
+	# Spread cultural influence using the culture output.
+	Influence.spread(gs.map, s.x, s.y, culture_out, ring, s.owner_player_id, db)
 	Influence.resolve_ownership(gs.map)
 
 static func _settlement_upkeep(gs: GameState, s: Settlement,

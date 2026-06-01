@@ -117,7 +117,7 @@ func test_culture_ring_does_not_decrease() -> void:
 	s.output_commerce = 5
 	var ring_before: int = s.culture_ring
 	for _i in range(3):
-		TurnEngine._settlement_culture(gs, s)
+		TurnEngine._settlement_culture(gs, s, gs.get_player(1))
 	assert_true(s.culture_ring >= ring_before,
 		"Culture ring should not decrease over time")
 

@@ -317,3 +317,26 @@ func test_fresh_water_improves_wellbeing() -> void:
 	gs.map.get_tile(3, 2).terrain_id = "coast"  # adjacent water
 	TurnEngine._update_wellbeing(gs, land_s, gs.db)
 	assert_gt(land_s.wellbeing_positive, dry_pos, "Adjacent fresh water improves wellbeing")
+
+# ── Item 9: Culture channel fix (§4.7/§6.2) ────────────────────────────────────
+
+func test_culture_uses_culture_slider_slice() -> void:
+	var gs = _make_gs()
+	var s = _settlement(gs, 1, 5, 5)
+	s.output_commerce = 100
+	s.culture_total = 0
+	var p = gs.get_player(1)
+	p.slider_finance = 40; p.slider_research = 40; p.slider_culture = 20; p.slider_intel = 0
+	TurnEngine._settlement_culture(gs, s, p)
+	# Only the culture slice (20% of 100) accrues, not the full 100.
+	assert_eq(s.culture_total, 20, "Culture accrues from the culture slider slice")
+
+func test_zero_culture_slider_accrues_nothing() -> void:
+	var gs = _make_gs()
+	var s = _settlement(gs, 1, 5, 5)
+	s.output_commerce = 100
+	s.culture_total = 0
+	var p = gs.get_player(1)
+	p.slider_finance = 60; p.slider_research = 40; p.slider_culture = 0; p.slider_intel = 0
+	TurnEngine._settlement_culture(gs, s, p)
+	assert_eq(s.culture_total, 0, "No culture accrues when the culture slider is zero")
