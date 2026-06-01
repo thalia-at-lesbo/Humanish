@@ -465,8 +465,8 @@ func test_pathfinding_over_open_field_returns_valid_path() -> void:
 	assert_false(path.empty(), "A path across open land must be found")
 	var last = path[path.size() - 1]
 	assert_eq([int(last[0]), int(last[1])], [5, 3], "Path must end at the destination")
-	# 4-directional movement: optimal length is the Manhattan distance.
-	assert_eq(path.size(), 8, "Path length should be the Manhattan distance (5+3)")
+	# 8-directional movement: optimal length is the Chebyshev distance.
+	assert_eq(path.size(), 5, "Path length should be the Chebyshev distance max(5,3)")
 
 func test_move_stack_command_succeeds_on_open_map() -> void:
 	var db = _db()

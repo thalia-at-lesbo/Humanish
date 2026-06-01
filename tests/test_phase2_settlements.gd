@@ -117,7 +117,7 @@ func test_culture_ring_does_not_decrease() -> void:
 	s.output_commerce = 5
 	var ring_before: int = s.culture_ring
 	for _i in range(3):
-		TurnEngine._settlement_culture(gs, s)
+		TurnEngine._settlement_culture(gs, s, gs.get_player(1))
 	assert_true(s.culture_ring >= ring_before,
 		"Culture ring should not decrease over time")
 
@@ -151,5 +151,5 @@ func test_wellbeing_deficit_non_negative() -> void:
 	var gs = _make_gs()
 	var s = _make_settlement(gs, 1, 5, 5)
 	s.population = 3
-	TurnEngine._update_wellbeing(s, gs.db)
+	TurnEngine._update_wellbeing(gs, s, gs.db)
 	assert_true(s.wellbeing_deficit >= 0, "Wellbeing deficit is non-negative")

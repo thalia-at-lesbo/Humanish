@@ -118,5 +118,26 @@
     "can_found": false,
     "can_build": false,
     "upgrades_to": "caravel"
+  },
+  "fighter": {
+    "id": "fighter",
+    "domain": "air",
+    "base_strength": 12,
+    "movement": 600,
+    "cost": 90,
+    "upkeep": 2,
+    "tech_required": null,
+    "resource_required": null,
+    "classification": "air",
+    "tags": [],
+    "first_strikes": 0,
+    "combat_limit": 0,
+    "withdrawal_chance": 0,
+    "transport_capacity": 0,
+    "cargo_capacity": 0,
+    "air_range": 4,
+    "can_found": false,
+    "can_build": false,
+    "upgrades_to": ""
   }
 }

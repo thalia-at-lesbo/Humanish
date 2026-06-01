@@ -20,6 +20,9 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	# world step independent of the per-phase hooks.
 	EconOrgs.spread_all(gs, gs.rng)
 
+	# Tributaries pay tribute to their overlords (§7).
+	_collect_tribute(gs)
+
 	# 3. Per-tile upkeep across the whole map
 	if not hooks.run(IDs.Phase.WORLD_TILE_UPKEEP, gs):
 		_tile_upkeep(gs)
@@ -38,9 +41,9 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	if not hooks.run(IDs.Phase.WORLD_ASSIGN_SITES, gs):
 		pass
 
-	# 7. Resolve assembly/voting bodies (stub)
+	# 7. Resolve assembly/voting bodies
 	if not hooks.run(IDs.Phase.WORLD_ASSEMBLY, gs):
-		pass
+		_resolve_assembly(gs)
 
 	# 8. Increment turn counter
 	if not hooks.run(IDs.Phase.WORLD_INCREMENT_TURN, gs):
@@ -136,7 +139,7 @@ static func settlement_step(gs: GameState, s: Settlement,
 
 	# Culture accumulation + spread
 	if not hooks.run(IDs.Phase.SETTLEMENT_CULTURE, gs, {"settlement_id": s.id}):
-		_settlement_culture(gs, s)
+		_settlement_culture(gs, s, player)
 
 	# Belief/affiliation processing
 	if not hooks.run(IDs.Phase.SETTLEMENT_BELIEFS, gs, {"settlement_id": s.id}):
@@ -193,7 +196,7 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	s.output_commerce   = total_commerce
 
 	# Wellbeing: deficit reduces food surplus
-	_update_wellbeing(s, db)
+	_update_wellbeing(gs, s, db)
 	var effective_food: int = total_food - s.wellbeing_deficit
 	var consumed: int = s.population * 2
 	var surplus: int = effective_food - consumed
@@ -220,7 +223,7 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	# Contentment update
 	_update_contentment(gs, s, player, db)
 
-static func _update_wellbeing(s: Settlement, db: DataDB) -> void:
+static func _update_wellbeing(gs: GameState, s: Settlement, db: DataDB) -> void:
 	var pos: int = 0
 	var neg: int = s.population  # base negative from population
 	for struct_id in s.structures:
@@ -230,9 +233,23 @@ static func _update_wellbeing(s: Settlement, db: DataDB) -> void:
 	# Adopted belief wellbeing (§8)
 	if s.belief_id != "":
 		pos += int(db.beliefs.get(s.belief_id, {}).get("health_bonus", 0))
+	# Fresh water from an adjacent water body or a river/oasis feature (§4.6)
+	if _has_fresh_water(gs, s, db):
+		pos += db.get_constant("fresh_water_health", 2)
 	s.wellbeing_positive = pos
 	s.wellbeing_negative = neg
 	s.wellbeing_deficit = max(0, neg - pos)
+
+# A settlement has fresh water if its tile carries a river/oasis feature or any
+# neighbour is a water tile (§4.6).
+static func _has_fresh_water(gs: GameState, s: Settlement, db: DataDB) -> bool:
+	var tile: Tile = gs.map.get_tile(s.x, s.y)
+	if tile != null and (tile.feature_id == "river" or tile.feature_id == "oasis"):
+		return true
+	for nb in gs.map.neighbours8(s.x, s.y):
+		if db.get_terrain(nb.terrain_id).get("domain", "land") != "land":
+			return true
+	return false
 
 static func _update_contentment(gs: GameState, s: Settlement, player: Player, db: DataDB) -> void:
 	var pos: int = 0
@@ -249,6 +266,22 @@ static func _update_contentment(gs: GameState, s: Settlement, player: Player, db
 	# Adopted belief comfort (§8)
 	if s.belief_id != "":
 		pos += int(db.beliefs.get(s.belief_id, {}).get("happiness_bonus", 0))
+
+	# Garrison comfort: stationed military units reassure the populace (§4.5)
+	var garrison: int = 0
+	for u in gs.units:
+		if u.owner_player_id == player.id and u.x == s.x and u.y == s.y:
+			if db.get_unit(u.unit_type_id).get("classification", "") != "civilian":
+				garrison += 1
+	if garrison > 0:
+		var g_bonus: int = garrison * db.get_constant("garrison_happiness_per_unit", 1)
+		var g_cap: int = db.get_constant("garrison_happiness_cap", 3)
+		pos += g_cap if g_bonus > g_cap else g_bonus
+
+	# Overcrowding anger above a comfortable size (§4.5)
+	var crowd_thresh: int = db.get_constant("overcrowding_threshold", 6)
+	if s.population > crowd_thresh:
+		neg_anger += (s.population - crowd_thresh) * db.get_constant("overcrowding_anger_per_pop", 3)
 
 	# Policy anger
 	for cat in player.policies:
@@ -339,12 +372,17 @@ static func _complete_item(gs: GameState, s: Settlement,
 				gs.endgame_project_stages[alliance_id] = 0
 			gs.endgame_project_stages[alliance_id] += 1
 
-static func _settlement_culture(gs: GameState, s: Settlement) -> void:
+static func _settlement_culture(gs: GameState, s: Settlement, player: Player) -> void:
 	var db: DataDB = gs.db
 	var thresholds: Array = db.constants.get("culture_ring_thresholds",
 		[10, 30, 60, 100, 150, 210, 280, 360, 450, 550])
 
-	s.culture_total += s.output_commerce  # culture comes from commerce channel (simplified)
+	# Culture is the culture slice of the economic split, not raw commerce (§4.7,
+	# §6.2). Players with no settlement owner default to the whole commerce value.
+	var culture_out: int = s.output_commerce
+	if player != null:
+		culture_out = player.split_commerce(s.output_commerce)[2]
+	s.culture_total += culture_out
 
 	# Ring expansion
 	var ring: int = 1
@@ -356,8 +394,8 @@ static func _settlement_culture(gs: GameState, s: Settlement) -> void:
 	ring = min(ring, thresholds.size())
 	s.culture_ring = ring
 
-	# Spread cultural influence
-	Influence.spread(gs.map, s.x, s.y, s.output_commerce, ring, s.owner_player_id, db)
+	# Spread cultural influence using the culture output.
+	Influence.spread(gs.map, s.x, s.y, culture_out, ring, s.owner_player_id, db)
 	Influence.resolve_ownership(gs.map)
 
 static func _settlement_upkeep(gs: GameState, s: Settlement,
@@ -454,15 +492,72 @@ static func _update_treasury(gs: GameState, player: Player) -> void:
 		var udata: Dictionary = db.get_unit(u.unit_type_id)
 		upkeep += int(udata.get("upkeep", 0))
 
+	# Settlement upkeep scales with distance from the capital and settlement size
+	# (§6.1). The capital is the player's earliest-founded settlement.
+	var capital: Settlement = _find_capital(gs, player.id)
+	var dist_scale: int = db.get_constant("upkeep_distance_scale", 1)
+	var size_scale: int = db.get_constant("upkeep_size_scale", 1)
+	for s in gs.settlements:
+		if s.owner_player_id != player.id:
+			continue
+		var dist: int = 0
+		if capital != null:
+			dist = gs.map.distance(capital.x, capital.y, s.x, s.y)
+		upkeep += dist * dist_scale + (s.population * size_scale) / 4
+
+	# Policy upkeep modifier (percentage; negative = administrative discount).
+	var policy_mod: int = 0
+	for cat in player.policies:
+		var pol: Dictionary = db.policies.get("policies", {}).get(player.policies[cat], {})
+		policy_mod += int(pol.get("upkeep_modifier", 0))
+	if policy_mod != 0:
+		upkeep += Fixed.scale(upkeep, policy_mod)
+	if upkeep < 0:
+		upkeep = 0
+
 	player.treasury += income - upkeep
 
-	# Insolvency: force research down if broke
+	# Insolvency (§6.1): force research down immediately; only sell/disband as an
+	# extreme measure once the player stays broke past the grace period.
 	if player.treasury < 0:
-		player.treasury = 0
 		if player.slider_research > 0:
 			player.slider_research = max(0, player.slider_research - 10)
-			var freed: int = 10
-			player.slider_finance += freed
+			player.slider_finance += 10
+		player.insolvent_turns += 1
+		if player.insolvent_turns > db.get_constant("insolvency_grace_turns", 1):
+			var guard: int = 0
+			while player.treasury < 0 and guard < 100 and _sell_or_disband(gs, player):
+				guard += 1
+		if player.treasury < 0:
+			player.treasury = 0
+	else:
+		player.insolvent_turns = 0
+
+# The player's capital: the surviving settlement with the lowest id (earliest
+# founded). Null if the player has no settlements.
+static func _find_capital(gs: GameState, player_id: int) -> Settlement:
+	var capital: Settlement = null
+	for s in gs.settlements:
+		if s.owner_player_id != player_id:
+			continue
+		if capital == null or s.id < capital.id:
+			capital = s
+	return capital
+
+# Sell the newest structure (salvage refund) or, failing that, disband a unit to
+# relieve insolvency. Returns true if something was sold/disbanded.
+static func _sell_or_disband(gs: GameState, player: Player) -> bool:
+	for s in gs.settlements:
+		if s.owner_player_id == player.id and not s.structures.empty():
+			var sid: String = s.structures[s.structures.size() - 1]
+			s.structures.remove(s.structures.size() - 1)
+			player.treasury += int(gs.db.get_structure(sid).get("cost", 0)) / 4
+			return true
+	for u in gs.units:
+		if u.owner_player_id == player.id:
+			Stack.remove_unit(gs.units, u.id)
+			return true
+	return false
 
 static func _apply_research(gs: GameState, player: Player) -> void:
 	if player.current_research_id == "":
@@ -596,6 +691,38 @@ static func _resolve_trades(gs: GameState) -> void:
 		for i in range(expired.size() - 1, -1, -1):
 			alliance.pending_trades.remove(expired[i])
 
+# Tributary alliances pay a share of their treasury to their overlord (§7).
+static func _collect_tribute(gs: GameState) -> void:
+	var pct: int = gs.db.get_constant("tribute_pct", 10)
+	for sub in gs.alliances:
+		if sub.is_subordinate_to < 0:
+			continue
+		var overlord: Alliance = gs.get_alliance(sub.is_subordinate_to)
+		if overlord == null or overlord.member_player_ids.empty():
+			continue
+		var recipient: Player = gs.get_player(overlord.member_player_ids[0])
+		for pid in sub.member_player_ids:
+			var p: Player = gs.get_player(pid)
+			if p == null:
+				continue
+			var tribute: int = Fixed.scale(p.treasury, pct)
+			if tribute <= 0:
+				continue
+			p.treasury -= tribute
+			if recipient != null:
+				recipient.treasury += tribute
+
+# Diplomatic assembly (§3.7): each alliance's voting weight is the population it
+# governs. The tally feeds the diplomatic win condition (§10).
+static func _resolve_assembly(gs: GameState) -> void:
+	var votes := {}
+	for s in gs.settlements:
+		var p: Player = gs.get_player(s.owner_player_id)
+		if p == null:
+			continue
+		votes[p.alliance_id] = int(votes.get(p.alliance_id, 0)) + s.population
+	gs.diplomatic_votes = votes
+
 static func _advance_alliances(gs: GameState) -> void:
 	for alliance in gs.alliances:
 		# Nothing to share in an alliance of one; this also keeps solo players
@@ -618,8 +745,18 @@ static func _advance_alliances(gs: GameState) -> void:
 			alliance.shared_research_store += Fixed.scale(research_contrib, share_pct)
 
 static func _tile_upkeep(gs: GameState) -> void:
-	# Tile-level upkeep (improvement maintenance) — currently stub
-	pass
+	# Improvement maintenance (§3.3): each owned, improved tile charges its owner
+	# the improvement's upkeep.
+	var db: DataDB = gs.db
+	for tile in gs.map.all_tiles():
+		if tile.owner_player_id < 0 or tile.improvement_id == "":
+			continue
+		var cost: int = int(db.get_improvement(tile.improvement_id).get("upkeep", 0))
+		if cost <= 0:
+			continue
+		var p: Player = gs.get_player(tile.owner_player_id)
+		if p != null:
+			p.treasury -= cost
 
 static func _set_next_active_player(gs: GameState) -> void:
 	if gs.players.empty():
