@@ -7,16 +7,28 @@ A guide to how the codebase is structured and how the pieces connect at runtime.
 ## Directory map
 
 ```
-project.godot          Godot 3.6 project file; registers all class_name globals
-data/                  20 JSON config tables — all numeric constants and content live here
+project.godot               Godot 3.6 project file; registers all class_name globals
+                            main_scene → scenes/menus/start_menu.tscn
+data/                       21 JSON config tables — all numeric constants and content live here
 src/
-  core/                Foundation: math, IDs, RNG, data loading
-  world/               Map geometry, tile output formula, regions, cultural influence
-  sim/                 Rule modules: every §3–§11 mechanic
-  api/                 Public surface: commands, save/load, facade
-tests/                 GUT 7.4.3 headless suites, one file per implementation phase
-addons/gut/            Test framework (vendored)
-docs/                  This file, the engine-core plan, and the full game-rules spec
+  core/                     Foundation: math, IDs, RNG, data loading
+  world/                    Map geometry, tile output formula, regions, cultural influence
+  sim/                      Rule modules: every §3–§11 mechanic
+  api/                      Public surface: commands, save/load, facade
+scenes/
+  menus/                    start_menu.tscn/.gd  — entry point; title screen + nav
+  setup/                    setup_screen.gd      — new-game config (players, society, world params)
+  main.tscn / main.gd       Root game scene; wires all subsystems to SimFacade
+  world/                    world_view.tscn, fog_layer.gd, minimap.gd
+  hud/                      hud.tscn, turn_score_bar, research_bar, slider_panel,
+                            selection_panel, message_log, end_turn_button
+  screens/                  city_screen, tech_chooser, policy_screen,
+                            diplomacy_screen, save_load_screen
+  input/                    input_router.gd, hotkey_map.gd
+  hotseat/                  hotseat_manager.gd, pass_device_screen.tscn/.gd
+tests/                      GUT 7.4.3 headless suites, one file per implementation phase
+addons/gut/                 Test framework (vendored)
+docs/                       This file, the engine-core plan, and the full game-rules spec
 ```
 
 ---
@@ -25,10 +37,13 @@ docs/                  This file, the engine-core plan, and the full game-rules 
 
 ```
 ┌──────────────────────────────────────────┐
-│           Future presentation            │  (Phase 6+, not yet built)
-│        scenes · HUD · input              │
+│         Presentation  (scenes/)          │
+│  StartMenu · SetupScreen · Main          │
+│  WorldView · HUD · InputRouter           │
+│  Screens · HotseatManager                │
 └─────────────────┬────────────────────────┘
                   │ apply_command() / signals
+                  │ init_with_facade(facade, db)
 ┌─────────────────▼────────────────────────┐
 │            src/api/  (facade)            │  ← only entry point into the engine
 │  SimFacade  ·  Commands  ·  SaveLoad     │
@@ -47,6 +62,31 @@ docs/                  This file, the engine-core plan, and the full game-rules 
 ```
 
 The wall is enforced by convention: `sim/` and `world/` are pure GDScript `Reference` subclasses with no editor imports, scenes, or `Node` dependencies. Tests run headless against them directly.
+
+---
+
+## Presentation layer (`scenes/`)
+
+### `StartMenu` (`scenes/menus/`)
+The Godot `main_scene`. A full-screen `Control` that builds its UI programmatically. On `_ready()` it loads `DataDB`; the "New Game" button instantiates `SetupScreen` and hides the menu; "Exit" calls `get_tree().quit()`. When `SetupScreen` completes, `StartMenu` instantiates `main.tscn`, calls `main.init_with_facade(facade, db)` before adding it to the tree, sets it as `current_scene`, then frees itself.
+
+### `SetupScreen` (`scenes/setup/`)
+A programmatic `Control` (no `.tscn`). Initialized via `init(db, on_start_callback)`. Presents: player count (2–4), per-player name and society picker, world size, pace, difficulty, and seed. On "Start Game" it creates a `SimFacade`, calls `facade.setup(...)` with the collected parameters, and fires `on_start_callback(facade, db)`. Society selection injects the chosen society's `leader_id`, `traits`, and `starting_gold` into the player config.
+
+### `Main` (`scenes/main.tscn` / `main.gd`)
+Root game scene. Wires `WorldView`, `HUD` sub-panels, `InputRouter`, and `HotseatManager` to the `SimFacade`. Exposes `init_with_facade(facade, db)` — call this **before** adding to the tree so `_ready()` skips the default hardcoded 2-player setup. Routes `screen_requested` signals to the appropriate full-screen nodes (`CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen`).
+
+### HUD (`scenes/hud/`)
+`hud.tscn` is a `VBoxContainer` containing: `TurnScoreBar`, `ResearchBar`, `SliderPanel`, `SelectionPanel`, `MessageLog`, `EndTurnButton`. Each panel's `.gd` is initialized with `init(facade, ...)` and reads facade state or subscribes to its signals.
+
+### World view (`scenes/world/`)
+`WorldView` renders the tile map and unit positions; `FogLayer` overlays fog-of-war; `Minimap` draws the territory overview. All three are initialized with `init(facade)`.
+
+### Full-screen overlays (`scenes/screens/`)
+`CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen` — each exposes a `show_screen()` entry point and reads state through the facade.
+
+### Input (`scenes/input/`)
+`InputRouter` translates raw `_input` events into `Commands.*()` calls via `facade.apply_command()`. `HotkeyMap` loads key bindings from `data/hotkeys.json`.
 
 ---
 
@@ -74,6 +114,9 @@ The tables and what they configure:
 | `ages.json` / `paces.json` / `difficulties.json` | Scaling multipliers and per-level modifiers |
 | `world_sizes.json` | Map width/height, wrap axes, suggested player count |
 | `win_conditions.json` | Condition type and numeric thresholds |
+| `leaders_traits.json` | `"traits"` block: per-trait combat/production/commerce bonuses. `"societies"` block: playable societies each with `leader_id`, `leader_name`, `description`, `traits[]`, and `starting_gold`. |
+
+Typed getters follow the pattern `get_X(id) → Dictionary` for every table. Additional helpers: `get_societies() → Dictionary` (full societies map), `get_society(id) → Dictionary` (single entry).
 
 ### `RNG`
 Thin wrapper around Godot's `RandomNumberGenerator` (PCG32). A single instance lives on `GameState` (`gs.rng`). Every stochastic call in the pipeline draws from it — never creating a separate generator. `get_state()` / `restore_state()` serialize the seed and state as **strings** (not ints) to avoid JSON's 53-bit double-precision truncation of 64-bit values.
