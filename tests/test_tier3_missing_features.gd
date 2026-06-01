@@ -117,3 +117,25 @@ func test_entering_discovery_site_yields_reward() -> void:
 	var u = _unit(gs, "warrior", 1, 5, 5)
 	f._cmd_move_stack({"player_id": 1, "from_x": 5, "from_y": 5, "to_x": 6, "to_y": 5})
 	assert_false(gs.map.get_tile(6, 5).has_discovery, "Discovery site is consumed on entry")
+
+# ── Item 3: ZoC & 8-direction movement (§1.2, §5.2) ────────────────────────────
+
+func test_pathfinding_uses_diagonals() -> void:
+	var gs = _make_gs()
+	var u = _unit(gs, "warrior", 1, 5, 5)
+	var path = Pathfinding.find_path(gs.map, 5, 5, 7, 7, u, gs.db, gs.units, 1)
+	assert_eq(path.size(), 2, "Diagonal movement reaches (7,7) in two steps, not four")
+
+func test_zone_of_control_halts_movement() -> void:
+	var gs = _make_gs()
+	var f = _facade(gs)
+	# A two-wide land corridor on rows 5-6; everything else impassable mountain.
+	for tile in gs.map.all_tiles():
+		if tile.y != 5 and tile.y != 6:
+			tile.terrain_id = "mountain"
+	var u = _unit(gs, "warrior", 1, 3, 5)
+	u.movement_total = 1000; u.movement_left = 1000  # plenty to reach (12,5)
+	_unit(gs, "warrior", -2, 8, 6)  # wild unit beside the corridor at (8,6)
+	f._cmd_move_stack({"player_id": 1, "from_x": 3, "from_y": 5, "to_x": 12, "to_y": 5})
+	assert_eq(u.x, 7, "Unit halts on the tile adjacent to the hostile unit")
+	assert_eq(u.movement_left, 0, "Zone of control spends remaining movement")

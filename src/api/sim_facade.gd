@@ -323,6 +323,13 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 			_add_notification("Discovery: " + str(reward.get("type", "")), "major")
 			emit_signal("event_emitted", reward)
 
+		# Zone of control: entering a tile adjacent to a hostile unit ends the
+		# stack's movement for the turn (§5.2).
+		if _adjacent_hostile(sx, sy, player_id):
+			for u in moving_units:
+				u.movement_left = 0
+			break
+
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
 	return true
@@ -796,6 +803,17 @@ func _accrue_war_fatigue(loser: Unit, winner: Unit) -> void:
 		return
 	var amt: int = _db.get_constant("war_fatigue_per_loss", 5)
 	la.war_fatigue[wp.alliance_id] = int(la.war_fatigue.get(wp.alliance_id, 0)) + amt
+
+# True if a hostile unit (wild, or an enemy at war) occupies a tile adjacent to
+# (x, y). Used to apply zones of control (§5.2).
+func _adjacent_hostile(x: int, y: int, player_id: int) -> bool:
+	for nb in _gs.map.neighbours8(x, y):
+		for u in _gs.units:
+			if u.x != nb.x or u.y != nb.y or u.owner_player_id == player_id:
+				continue
+			if u.owner_player_id == -2 or _gs.are_at_war(player_id, u.owner_player_id):
+				return true
+	return false
 
 func _get_next_player_index(current_player_id: int) -> int:
 	for i in range(_gs.players.size()):

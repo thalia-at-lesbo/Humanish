@@ -44,7 +44,7 @@ static func find_path(map: WorldMap, from_x: int, from_y: int,
 		if cx == to_x and cy == to_y:
 			break
 
-		for nb in map.neighbours4(cx, cy):
+		for nb in map.neighbours8(cx, cy):
 			var step_cost: int = _move_cost(nb, db, domain)
 			if step_cost < 0:
 				continue  # impassable
