@@ -447,3 +447,41 @@ func test_main_scene_boots_and_wires_overlays() -> void:
 	assert_true(main.get_facade().get_state().units.size() > 0,
 		"the booted game should have starting units")
 	get_tree().paused = false  # safety in case an overlay toggled pause
+
+# ── Move-unit sort bug: pathfinding over many equal-cost tiles ─────────────────
+
+func test_pathfinding_over_open_field_returns_valid_path() -> void:
+	# An open grassland field produces a frontier full of equal-cost nodes — the
+	# case that used to hit Array.sort()'s "bad comparison function" on [cost,x,y].
+	var db = _db()
+	var map = load("res://src/world/world_map.gd").new()
+	map.init(8, 8, false, false)
+	for tile in map.all_tiles():
+		tile.terrain_id = "grassland"
+	var u = load("res://src/sim/unit.gd").new()
+	u.id = 1; u.unit_type_id = "warrior"; u.owner_player_id = 1; u.x = 0; u.y = 0
+
+	var path = Pathfinding.find_path(map, 0, 0, 5, 3, u, db, [], 1)
+	assert_false(path.empty(), "A path across open land must be found")
+	var last = path[path.size() - 1]
+	assert_eq([int(last[0]), int(last[1])], [5, 3], "Path must end at the destination")
+	# 4-directional movement: optimal length is the Manhattan distance.
+	assert_eq(path.size(), 8, "Path length should be the Manhattan distance (5+3)")
+
+func test_move_stack_command_succeeds_on_open_map() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 123, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = load("res://src/sim/unit.gd").new()
+	u.id = gs.next_unit_id(); u.unit_type_id = "warrior"; u.owner_player_id = pid
+	u.x = 2; u.y = 2; u.movement_total = 200; u.movement_left = 200
+	gs.units.append(u)
+	var ok = facade.apply_command(Commands.move_stack(pid, 2, 2, 3, 2))
+	assert_true(ok, "Moving a unit one tile on open land should succeed")

@@ -24,8 +24,15 @@ static func find_path(map: WorldMap, from_x: int, from_y: int,
 	dist[start_key] = 0
 
 	while not heap.empty():
-		heap.sort()
-		var node: Array = heap.pop_front()
+		# Extract the lowest-cost node with a linear scan. Sorting the heap with
+		# Array.sort() would compare [cost, x, y] sub-arrays, which Godot cannot
+		# order consistently ("bad comparison function; sorting will be broken").
+		var best_i: int = 0
+		for i in range(1, heap.size()):
+			if heap[i][0] < heap[best_i][0]:
+				best_i = i
+		var node: Array = heap[best_i]
+		heap.remove(best_i)
 		var cost: int = node[0]
 		var cx: int = node[1]
 		var cy: int = node[2]

@@ -443,21 +443,35 @@ static func _auto_assign_workers(gs: GameState, player: Player) -> void:
 			continue
 		var workers_needed: int = s.effective_workers()
 		s.worked_tiles = []
-		# Gather candidate tiles owned by this player, sorted by food output descending
+		# Gather candidate tiles owned by this player.
 		var candidates := []
 		for tile in gs.map.tiles_in_range(s.x, s.y, s.culture_ring):
 			if tile.owner_player_id == player.id or tile.owner_player_id == -1:
 				var out: Array = TileOutput.compute(tile, db, player.technologies)
 				var score: int = out[0] * 3 + out[1] * 2 + out[2]
 				candidates.append([score, tile.x, tile.y])
-		candidates.sort()
-		candidates.invert()
+		# Repeatedly take the best candidate. A plain candidates.sort() would
+		# compare [score, x, y] sub-arrays, which Godot cannot order consistently
+		# ("bad comparison function; sorting will be broken").
 		var assigned: int = 0
-		for c in candidates:
-			if assigned >= workers_needed:
-				break
+		while assigned < workers_needed and not candidates.empty():
+			var best_i: int = 0
+			for i in range(1, candidates.size()):
+				if _worker_candidate_better(candidates[i], candidates[best_i]):
+					best_i = i
+			var c: Array = candidates[best_i]
+			candidates.remove(best_i)
 			s.worked_tiles.append([c[1], c[2]])
 			assigned += 1
+
+# True if candidate `a` should be preferred over `b`: higher score first, ties
+# broken by larger x then larger y (matching the previous sort/invert ordering).
+static func _worker_candidate_better(a: Array, b: Array) -> bool:
+	if a[0] != b[0]:
+		return a[0] > b[0]
+	if a[1] != b[1]:
+		return a[1] > b[1]
+	return a[2] > b[2]
 
 static func _resolve_trades(gs: GameState) -> void:
 	for alliance in gs.alliances:
