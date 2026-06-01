@@ -297,3 +297,29 @@ func test_wild_units_are_capped_over_many_turns() -> void:
 	var cap = land / int(db.constants.get("wild_land_per_unit", 80))
 	assert_true(wild <= cap + 1,
 		"Wild units (%d) must stay near the land-based cap (%d), not flood" % [wild, cap])
+
+# ── Bug 2+3: pass-device overlay sits on top, OK dismisses and advances ─────────
+
+func test_bug3_pass_device_overlay_wiring() -> void:
+	var scene = load("res://scenes/hotseat/pass_device_screen.tscn").instance()
+	add_child_autofree(scene)
+
+	# It must live on its own CanvasLayer (above the HUD's layer) so input reaches
+	# the OK button instead of being swallowed by the HUD.
+	assert_true(scene is CanvasLayer, "overlay must be a CanvasLayer")
+	assert_true(scene.layer > 1, "overlay layer must be above the HUD CanvasLayer")
+
+	scene.init(null)
+	assert_false(scene._root.visible, "overlay starts hidden")
+	assert_true(scene._button.is_connected("pressed", scene, "_on_ok_pressed"),
+		"OK button must be connected to its dismiss handler")
+
+	scene.show_for_player("Bob", 2)
+	assert_true(scene._root.visible, "overlay is visible after show_for_player")
+	assert_true(get_tree().paused, "the game is paused while the overlay is up")
+
+	scene._on_ok_pressed()
+	assert_false(scene._root.visible, "OK dismisses the overlay")
+	assert_false(get_tree().paused, "OK resumes the game so the next turn proceeds")
+
+	get_tree().paused = false  # safety: never leave the test tree paused

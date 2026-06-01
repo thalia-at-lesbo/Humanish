@@ -62,12 +62,11 @@ func _ready() -> void:
 	if hsm != null:
 		hsm.init(_facade, world_view)
 		if pass_screen != null:
+			# The overlay self-wires its OK button and manages its own pause/
+			# visibility; we only hand it the facade.
 			if pass_screen.has_method("init"):
 				pass_screen.init(_facade)
 			hsm.set_pass_screen(pass_screen)
-			var ok_btn = pass_screen.get_node_or_null("VBox/OKButton")
-			if ok_btn != null:
-				ok_btn.connect("pressed", pass_screen, "_on_ok_pressed")
 
 func _init_node(path: String, args: Array) -> void:
 	var node = get_node_or_null(path)
