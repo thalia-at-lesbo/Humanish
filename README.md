@@ -116,3 +116,11 @@ recipes, but in brief:
 - `docs/engine-core-plan.md`, `docs/phase6-plan.md` — engine build plans.
 - `docs/user-interface-design.md` — UI design notes.
 - `docs/game-data.md` — data-table reference.
+
+---
+
+## License
+
+Humanish is free software, licensed under the **GNU General Public License v3.0**.
+See [`LICENSE`](LICENSE) for the full text. You may redistribute and/or modify it under
+those terms; it comes with **no warranty**.
