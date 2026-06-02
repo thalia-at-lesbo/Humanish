@@ -598,12 +598,12 @@ func _move_distance_for(unit_type, sx, sy, tx, ty):
 	return gs.map.distance(sx, sy, u.x, u.y)
 
 func test_movement_is_bounded_by_class() -> void:
-	# Warrior: movement 200 = 2 tiles per turn on flat land.
+	# Warrior: movement 100 = 1 tile per turn on flat land.
 	var warrior_dist = _move_distance_for("warrior", 5, 5, 20, 5)
-	assert_eq(warrior_dist, 2, "Warrior should advance exactly 2 tiles, not the full path")
-	# Scout: movement 300 = 3 tiles, and faster than a warrior.
+	assert_eq(warrior_dist, 1, "Warrior should advance exactly 1 tile, not the full path")
+	# Scout: movement 200 = 2 tiles, and faster than a warrior.
 	var scout_dist = _move_distance_for("scout", 5, 5, 20, 5)
-	assert_eq(scout_dist, 3, "Scout should advance exactly 3 tiles per turn")
+	assert_eq(scout_dist, 2, "Scout should advance exactly 2 tiles per turn")
 	assert_true(scout_dist > warrior_dist, "Scout should out-range the warrior")
 
 # ── Bug: units could not attack each other ─────────────────────────────────────
