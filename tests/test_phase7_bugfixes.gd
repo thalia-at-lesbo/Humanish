@@ -156,12 +156,12 @@ func test_every_society_has_required_starting_units() -> void:
 func test_player_with_society_spawns_units() -> void:
 	var db = _db()
 	var facade = load("res://src/api/sim_facade.gd").new()
-	var annunaki = db.get_society("annunaki")
+	var society = db.get_society("american")
 	facade.setup(db, 17, "small", "normal", "warlord",
-		[{"name": "A", "leader_id": annunaki.get("leader_id", ""),
-			"traits": annunaki.get("traits", []),
+		[{"name": "A", "leader_id": society.get("leader_id", ""),
+			"traits": society.get("traits", []),
 			"starting_gold": 120,
-			"starting_units": annunaki.get("starting_units", [])}],
+			"starting_units": society.get("starting_units", [])}],
 		["time"])
 	var gs = facade.get_state()
 	var pid = gs.players[0].id
@@ -169,7 +169,7 @@ func test_player_with_society_spawns_units() -> void:
 	for u in gs.units:
 		if u.owner_player_id == pid:
 			mine.append(u.unit_type_id)
-	assert_eq(mine.size(), annunaki.get("starting_units", []).size(),
+	assert_eq(mine.size(), society.get("starting_units", []).size(),
 		"Player should spawn exactly its society's starting units")
 	assert_true("settler" in mine and "scout" in mine and "archer" in mine,
 		"Spawned units should include the core opening types")
