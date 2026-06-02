@@ -1,31 +1,42 @@
 {
   "last_standing": {
     "id": "last_standing",
-    "type": "last_standing"
+    "type": "last_standing",
+    "name": "Conquest",
+    "notes": "Only one alliance retains any settlements or units."
   },
   "dominance": {
     "id": "dominance",
     "type": "dominance",
-    "land_share_required": 60,
-    "population_share_required": 60
+    "name": "Domination",
+    "land_share_required": 66,
+    "population_share_required": 66
   },
   "endgame_project": {
     "id": "endgame_project",
     "type": "endgame_project",
-    "stages_required": 3
+    "name": "Space Race",
+    "stages_required": 7,
+    "notes": "Complete and launch all spaceship parts (Apollo Program required)."
   },
   "cultural": {
     "id": "cultural",
     "type": "cultural",
-    "cities_at_max_culture": 5
+    "name": "Cultural",
+    "cities_at_max_culture": 3,
+    "notes": "3 cities each reach Legendary culture (50,000)."
   },
   "diplomatic": {
     "id": "diplomatic",
     "type": "diplomatic",
-    "vote_share_required": 67
+    "name": "Diplomatic",
+    "vote_share_required": 67,
+    "notes": "Win the United Nations election."
   },
   "time": {
     "id": "time",
-    "type": "time"
+    "type": "time",
+    "name": "Time",
+    "notes": "Highest score at the turn limit wins."
   }
 }
