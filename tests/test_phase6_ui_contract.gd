@@ -174,8 +174,8 @@ func test_widget_help_finance_breakdown_contains_numbers() -> void:
 func test_widget_help_tech_lists_prereqs() -> void:
 	var f = _make_facade(13)
 	var help = f.widget_help({"type": IDs.WidgetType.TECH_NODE, "tech_id": "iron_working"})
-	assert_true("mining" in help,
-		"iron_working help text should list its prereq 'mining'")
+	assert_true("bronze_working" in help,
+		"iron_working help text should list its prereq 'bronze_working'")
 
 # ── Display-gating queries ────────────────────────────────────────────────────
 

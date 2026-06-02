@@ -81,15 +81,15 @@ func test_cannot_research_already_known() -> void:
 func test_cannot_research_missing_prereq() -> void:
 	var gs = _make_gs()
 	var p = gs.get_player(1)
-	assert_false(Research.can_research("iron_working", p, gs.db),
-		"Cannot research iron_working without mining prereq")
+	assert_false(Research.can_research("bronze_working", p, gs.db),
+		"Cannot research bronze_working without mining prereq")
 
 func test_can_research_with_prereq() -> void:
 	var gs = _make_gs()
 	var p = gs.get_player(1)
 	p.technologies.append("mining")
-	assert_true(Research.can_research("iron_working", p, gs.db),
-		"Can research iron_working when mining is known")
+	assert_true(Research.can_research("bronze_working", p, gs.db),
+		"Can research bronze_working when mining is known")
 
 func test_research_accumulates_and_completes() -> void:
 	var gs = _make_gs()
@@ -113,10 +113,10 @@ func test_research_prereq_discount_applies() -> void:
 	var gs = _make_gs()
 	var p = gs.get_player(1)
 	p.technologies.append("mining")
-	var cost_with: int = Research._effective_cost("iron_working", p, gs.db, {}, "normal")
+	var cost_with: int = Research._effective_cost("bronze_working", p, gs.db, {}, "normal")
 	var p2 = load("res://src/sim/player.gd").new()
 	p2.id = 99; p2.technologies = []
-	var cost_without: int = Research._effective_cost("iron_working", p2, gs.db, {}, "normal")
+	var cost_without: int = Research._effective_cost("bronze_working", p2, gs.db, {}, "normal")
 	assert_true(cost_with <= cost_without,
 		"Having prereq should reduce or equal research cost")
 

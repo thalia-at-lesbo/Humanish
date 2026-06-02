@@ -1,32 +1,58 @@
 {
   "ancient": {
     "id": "ancient",
+    "name": "Ancient",
+    "index": 0,
     "growth_threshold_scale": 100,
-    "start_turn": 0
+    "start_turn": 0,
+    "notes": "Starting era; most factions begin here"
   },
   "classical": {
     "id": "classical",
+    "name": "Classical",
+    "index": 1,
     "growth_threshold_scale": 100,
-    "start_turn": 50
+    "start_turn": 50,
+    "notes": "Iron working, philosophy, construction"
   },
   "medieval": {
     "id": "medieval",
+    "name": "Medieval",
+    "index": 2,
     "growth_threshold_scale": 110,
-    "start_turn": 120
+    "start_turn": 120,
+    "notes": "Feudalism, theology, engineering"
   },
   "renaissance": {
     "id": "renaissance",
+    "name": "Renaissance",
+    "index": 3,
     "growth_threshold_scale": 115,
-    "start_turn": 200
+    "start_turn": 200,
+    "notes": "Gunpowder, printing, astronomy"
   },
   "industrial": {
     "id": "industrial",
+    "name": "Industrial",
+    "index": 4,
     "growth_threshold_scale": 120,
-    "start_turn": 300
+    "start_turn": 300,
+    "notes": "Steam, assembly, electricity"
   },
   "modern": {
     "id": "modern",
+    "name": "Modern",
+    "index": 5,
     "growth_threshold_scale": 125,
-    "start_turn": 400
+    "start_turn": 400,
+    "notes": "Flight, computers, nuclear"
+  },
+  "future": {
+    "id": "future",
+    "name": "Future",
+    "index": 6,
+    "growth_threshold_scale": 130,
+    "start_turn": 500,
+    "notes": "Robotics, genetics, fusion"
   }
 }

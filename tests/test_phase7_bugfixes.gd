@@ -23,28 +23,28 @@ func test_tech_tree_loads_without_errors() -> void:
 
 func test_tech_tree_four_ages_present() -> void:
 	var db = _db()
-	for tid in ["stone_age", "bronze_age", "iron_age", "silicon_age"]:
+	for tid in ["agriculture", "pottery", "writing", "alphabet"]:
 		assert_false(db.get_technology(tid).empty(), "Tech '%s' must exist" % tid)
 
 func test_tech_tree_is_linear_progression() -> void:
 	var db = _db()
-	assert_eq(db.get_technology("bronze_age").get("prereqs_all"), ["stone_age"],
-		"bronze_age requires stone_age")
-	assert_eq(db.get_technology("iron_age").get("prereqs_all"), ["bronze_age"],
-		"iron_age requires bronze_age")
-	assert_eq(db.get_technology("silicon_age").get("prereqs_all"), ["iron_age"],
-		"silicon_age requires iron_age")
+	assert_eq(db.get_technology("pottery").get("prereqs_all"), ["agriculture"],
+		"pottery requires agriculture")
+	assert_eq(db.get_technology("writing").get("prereqs_all"), ["pottery"],
+		"writing requires pottery")
+	assert_eq(db.get_technology("alphabet").get("prereqs_all"), ["writing"],
+		"alphabet requires writing")
 
 func test_tech_tree_research_gating() -> void:
 	var db = _db()
 	var Research = load("res://src/sim/research.gd")
 	var p = _new_player(db)
-	# Knows nothing → only stone_age (no prereqs) is researchable.
-	assert_true(Research.can_research("stone_age", p, db), "stone_age open from the start")
-	assert_false(Research.can_research("bronze_age", p, db), "bronze_age locked without stone_age")
-	p.technologies = ["stone_age"]
-	assert_true(Research.can_research("bronze_age", p, db), "bronze_age unlocks after stone_age")
-	assert_false(Research.can_research("iron_age", p, db), "iron_age still locked")
+	# Knows nothing → only no-prereq techs (e.g. agriculture) are researchable.
+	assert_true(Research.can_research("agriculture", p, db), "agriculture open from the start")
+	assert_false(Research.can_research("pottery", p, db), "pottery locked without agriculture")
+	p.technologies = ["agriculture"]
+	assert_true(Research.can_research("pottery", p, db), "pottery unlocks after agriculture")
+	assert_false(Research.can_research("writing", p, db), "writing still locked")
 
 func test_setup_seeds_starting_tech_and_research() -> void:
 	var db = _db()
@@ -53,8 +53,8 @@ func test_setup_seeds_starting_tech_and_research() -> void:
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 100}],
 		["time"])
 	var p = facade.get_state().players[0]
-	assert_true(p.has_tech("stone_age"), "Players start knowing stone_age")
-	assert_eq(p.current_research_id, "bronze_age", "Default research target is bronze_age")
+	assert_true(p.has_tech("agriculture"), "Players start knowing agriculture")
+	assert_eq(p.current_research_id, "pottery", "Default research target is pottery")
 
 # ── Bug 10: 4-item civic system ────────────────────────────────────────────────
 
