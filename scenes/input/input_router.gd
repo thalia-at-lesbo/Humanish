@@ -49,12 +49,14 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			return
 
 		# Selection mode: click tile
-		var clicked_unit_id: int = _find_owned_unit_at(tx, ty, gs)
+		var owned_ids: Array = _owned_units_at(tx, ty, gs)
 		var clicked_city_id: int = _find_owned_city_at(tx, ty, gs)
 		var head_uid: int = _facade.get_selection().head_unit()
 
-		if clicked_unit_id >= 0:
-			_facade.select_unit(clicked_unit_id)
+		if not owned_ids.empty():
+			# Several units may share a tile. Each click on the stack advances to
+			# the next member, so repeated clicks cycle through every unit there.
+			_facade.select_unit(_next_in_stack(owned_ids, head_uid))
 		elif clicked_city_id >= 0:
 			_facade.select_city(clicked_city_id)
 		elif head_uid >= 0:
@@ -162,11 +164,22 @@ func _on_flyout_item(id: int, items: Array, tx: int, ty: int) -> void:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-func _find_owned_unit_at(tx: int, ty: int, gs) -> int:
+func _owned_units_at(tx: int, ty: int, gs) -> Array:
+	# All units the current player owns on this tile, in stable spawn order so the
+	# click-to-cycle ordering is consistent from one click to the next.
+	var ids: Array = []
 	for u in gs.units:
 		if u.x == tx and u.y == ty and u.owner_player_id == gs.current_player_id:
-			return u.id
-	return -1
+			ids.append(u.id)
+	return ids
+
+func _next_in_stack(ids: Array, head_uid: int) -> int:
+	# Pick the unit after the currently-selected one, wrapping around. If the
+	# selection isn't part of this stack, start at the top of the stack.
+	var idx: int = ids.find(head_uid)
+	if idx < 0:
+		return ids[0]
+	return ids[(idx + 1) % ids.size()]
 
 func _find_owned_city_at(tx: int, ty: int, gs) -> int:
 	for s in gs.settlements:

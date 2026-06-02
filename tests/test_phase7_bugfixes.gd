@@ -635,6 +635,196 @@ func test_pathfinding_allows_attacking_an_enemy_destination() -> void:
 		assert_false(int(step[0]) == 3 and int(step[1]) == 2,
 			"A through-route must not pass over the enemy-occupied tile")
 
+# ── Bug (June 2): friendly units may share a tile ──────────────────────────────
+
+func test_friendly_units_may_stack_on_one_tile() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 1212, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+
+	# A unit already sitting on the target tile...
+	var a = load("res://src/sim/unit.gd").new()
+	a.id = gs.next_unit_id(); a.unit_type_id = "warrior"; a.owner_player_id = pid
+	a.x = 5; a.y = 5
+	gs.units.append(a)
+	# ...and a second friendly unit moving onto it.
+	var b = load("res://src/sim/unit.gd").new()
+	b.id = gs.next_unit_id(); b.unit_type_id = "scout"; b.owner_player_id = pid
+	b.x = 6; b.y = 5; b.movement_total = 200; b.movement_left = 200
+	gs.units.append(b)
+
+	var ok = facade.apply_command(Commands.move_stack(pid, 6, 5, 5, 5))
+	assert_true(ok, "A unit must be able to move onto a friendly-occupied tile")
+	assert_eq([gs.get_unit(b.id).x, gs.get_unit(b.id).y], [5, 5],
+		"The moving unit ends up on the shared tile")
+	var here = Stack.at(gs.units, 5, 5, pid)
+	assert_eq(here.size(), 2, "Both friendly units now occupy the same tile")
+
+func test_pathfinding_allows_friendly_occupied_destination() -> void:
+	var db = _db()
+	var map = load("res://src/world/world_map.gd").new()
+	map.init(8, 8, false, false)
+	for tile in map.all_tiles():
+		tile.terrain_id = "grassland"
+	var mover = load("res://src/sim/unit.gd").new()
+	mover.id = 1; mover.unit_type_id = "warrior"; mover.owner_player_id = 0
+	mover.x = 2; mover.y = 2
+	var friend = load("res://src/sim/unit.gd").new()
+	friend.id = 2; friend.unit_type_id = "warrior"; friend.owner_player_id = 0
+	friend.x = 3; friend.y = 2
+
+	var path = Pathfinding.find_path(map, 2, 2, 3, 2, mover, db, [mover, friend], 0)
+	assert_false(path.empty(), "A friendly-occupied tile must be a legal destination")
+	var last = path[path.size() - 1]
+	assert_eq([int(last[0]), int(last[1])], [3, 2], "Path ends on the friendly tile")
+
+# ── Bug (June 2): clicking a stack cycles through the units on it ───────────────
+
+func test_click_cycles_through_stacked_units() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 1313, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+
+	# Three friendly units sharing one tile, in a known order.
+	var ids = []
+	for t in ["warrior", "scout", "archer"]:
+		var u = load("res://src/sim/unit.gd").new()
+		u.id = gs.next_unit_id(); u.unit_type_id = t; u.owner_player_id = pid
+		u.x = 4; u.y = 4
+		gs.units.append(u)
+		ids.append(u.id)
+
+	var ir = load("res://scenes/input/input_router.gd").new()
+	add_child_autofree(ir)
+
+	var stack_ids = ir._owned_units_at(4, 4, gs)
+	assert_eq(stack_ids, ids, "All owned units on the tile are returned in spawn order")
+
+	# With nothing selected, the first click selects the top of the stack.
+	assert_eq(ir._next_in_stack(stack_ids, -1), ids[0],
+		"A fresh click selects the first unit in the stack")
+	# Each subsequent click advances to the next unit...
+	assert_eq(ir._next_in_stack(stack_ids, ids[0]), ids[1], "second click → unit 2")
+	assert_eq(ir._next_in_stack(stack_ids, ids[1]), ids[2], "third click → unit 3")
+	# ...and wraps back to the start.
+	assert_eq(ir._next_in_stack(stack_ids, ids[2]), ids[0], "fourth click wraps to unit 1")
+
+	# Driving the real selection through the facade cycles the head unit too.
+	facade.select_unit(ir._next_in_stack(stack_ids, -1))
+	assert_eq(facade.get_selection().head_unit(), ids[0], "head starts at unit 1")
+	facade.select_unit(ir._next_in_stack(stack_ids, facade.get_selection().head_unit()))
+	assert_eq(facade.get_selection().head_unit(), ids[1], "head advances to unit 2")
+
+func test_owned_units_at_ignores_enemy_units() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 1414, "small", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50},
+		 {"name": "B", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	var p0 = gs.players[0].id
+	var p1 = gs.players[1].id
+	gs.current_player_id = p0
+
+	var mine = load("res://src/sim/unit.gd").new()
+	mine.id = gs.next_unit_id(); mine.unit_type_id = "warrior"; mine.owner_player_id = p0
+	mine.x = 3; mine.y = 3
+	gs.units.append(mine)
+	var theirs = load("res://src/sim/unit.gd").new()
+	theirs.id = gs.next_unit_id(); theirs.unit_type_id = "warrior"; theirs.owner_player_id = p1
+	theirs.x = 3; theirs.y = 3
+	gs.units.append(theirs)
+
+	var ir = load("res://scenes/input/input_router.gd").new()
+	add_child_autofree(ir)
+	assert_eq(ir._owned_units_at(3, 3, gs), [mine.id],
+		"Only the current player's units are selectable on a shared tile")
+
+# ── Bug (June 2): the view centers on the current player's unit each turn ───────
+
+func test_view_centers_on_current_players_unit() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 1515, "standard", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = load("res://src/sim/unit.gd").new()
+	u.id = gs.next_unit_id(); u.unit_type_id = "warrior"; u.owner_player_id = pid
+	u.x = 12; u.y = 9
+	gs.units.append(u)
+
+	var wv = load("res://scenes/world/world_view.tscn").instance()
+	add_child_autofree(wv)
+	wv.init(facade)
+
+	assert_true(wv.center_on_player(pid), "Centering should find the player's unit")
+	# At default zoom, the screen centre must map back to the unit's tile.
+	var vp = wv.get_viewport_rect().size
+	var t = wv.screen_to_tile(vp * 0.5)
+	assert_eq([int(t.x), int(t.y)], [12, 9],
+		"The camera should be centred on the current player's unit tile")
+
+func test_view_centers_on_settlement_when_no_units() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 1616, "standard", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var s = load("res://src/sim/settlement.gd").new()
+	s.id = gs.next_settlement_id(); s.name = "Cap"; s.owner_player_id = pid
+	s.x = 7; s.y = 8; s.population = 1
+	gs.settlements.append(s)
+
+	var wv = load("res://scenes/world/world_view.tscn").instance()
+	add_child_autofree(wv)
+	wv.init(facade)
+
+	assert_true(wv.center_on_player(pid),
+		"With no units, centering should fall back to a settlement")
+	var vp = wv.get_viewport_rect().size
+	var t = wv.screen_to_tile(vp * 0.5)
+	assert_eq([int(t.x), int(t.y)], [7, 8],
+		"The camera should fall back to centring on the player's city")
+
+func test_center_on_player_returns_false_with_nothing_owned() -> void:
+	var db = _db()
+	var facade = load("res://src/api/sim_facade.gd").new()
+	facade.setup(db, 1717, "standard", "normal", "warlord",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var wv = load("res://scenes/world/world_view.tscn").instance()
+	add_child_autofree(wv)
+	wv.init(facade)
+	assert_false(wv.center_on_player(facade.get_state().players[0].id),
+		"Centering reports false when the player owns nothing to look at")
+
+# ── Bug (June 2): fog of war is fully opaque (no transparency) ──────────────────
+
+func test_fog_color_is_fully_opaque() -> void:
+	var fog = load("res://scenes/world/fog_layer.gd").new()
+	add_child_autofree(fog)
+	assert_eq(fog.FOG_COLOR.a, 1.0,
+		"Fog of war must be fully opaque so hidden terrain never shows through")
+
 func test_unit_can_attack_adjacent_enemy() -> void:
 	var db = _db()
 	var facade = load("res://src/api/sim_facade.gd").new()

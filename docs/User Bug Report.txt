@@ -20,4 +20,7 @@ June 1, 2026, 4:11pm EDT (Currently fixed, do not investigate)
 -- No apparent way to settle a city
 -- If there is no "city view", we need to add one with all relevant city info (resources used, buildings, finance/research/cultured/intel output, current production, etc)
 
-
+June 2, 2026, 6:09pm EDT (Currently fixed, do not investigate)
+-- ensure units on the same square are allowed
+-- ensure units on the same square can be toggled between, perhaps with additional clicks on the unit stack
+-- fog of war should not have any transparency
