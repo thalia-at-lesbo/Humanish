@@ -4,7 +4,9 @@ extends Node2D
 # player cannot see. Rebuilt when HotseatManager signals a turn handoff.
 
 const TILE_SIZE: int = 40
-const FOG_COLOR: Color = Color(0.0, 0.0, 0.0, 0.75)
+# Fully opaque: hidden tiles are blacked out completely, with no transparency
+# that would let the underlying terrain bleed through.
+const FOG_COLOR: Color = Color(0.0, 0.0, 0.0, 1.0)
 
 var _visible_tiles: Dictionary = {}   # "x,y" → true
 var _facade

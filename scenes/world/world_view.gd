@@ -138,11 +138,31 @@ func _draw() -> void:
 		draw_circle(center, r, col)
 		draw_arc(center, r, 0, TAU, 24, Color.black, 1.5)
 
-	# Draw units (on top of settlements)
+	# Draw units (on top of settlements). The selected unit is drawn last so it
+	# sits on top of the others sharing its tile, and any tile holding more than
+	# one unit gets a small count badge so stacks are obvious and cycle-able.
+	var head_uid: int = _facade.get_selection().head_unit()
+	var counts: Dictionary = {}   # "x,y" → number of units on that tile
+	var selected_unit = null
 	for u in gs.units:
-		_draw_unit(u, gs)
+		var key: String = str(u.x) + "," + str(u.y)
+		counts[key] = int(counts.get(key, 0)) + 1
+		if u.id == head_uid:
+			selected_unit = u
+		else:
+			_draw_unit(u, gs, false)
+	if selected_unit != null:
+		_draw_unit(selected_unit, gs, true)
 
-func _draw_unit(u, gs) -> void:
+	# Stack-size badges sit above the unit markers (drawn once per tile).
+	var badged: Dictionary = {}
+	for u in gs.units:
+		var key2: String = str(u.x) + "," + str(u.y)
+		if int(counts.get(key2, 0)) > 1 and not badged.has(key2):
+			badged[key2] = true
+			_draw_stack_badge(u.x, u.y, int(counts[key2]))
+
+func _draw_unit(u, gs, is_selected: bool = false) -> void:
 	var screen_pos: Vector2 = _tile_to_screen(u.x, u.y)
 	var sz: float = TILE_SIZE * _zoom * 0.5
 	var unit_rect: Rect2 = Rect2(
@@ -153,12 +173,42 @@ func _draw_unit(u, gs) -> void:
 	draw_rect(unit_rect, col)
 	draw_rect(unit_rect, Color.black, false)
 
+	# A bright outline marks which unit in the stack is currently active.
+	if is_selected:
+		draw_rect(unit_rect.grow(2 * _zoom), Color(1, 1, 0.2, 1.0), false)
+
 	# Health bar
 	if u.health < 100:
 		var bar_w: float = sz * u.health / 100.0
 		var bar_rect: Rect2 = Rect2(unit_rect.position,
 			Vector2(bar_w, 3 * _zoom))
 		draw_rect(bar_rect, Color.green)
+
+# A small circular badge in the tile's top-right corner showing how many units
+# share the tile, so the player knows there is a stack to click through.
+func _draw_stack_badge(tx: int, ty: int, count: int) -> void:
+	var screen_pos: Vector2 = _tile_to_screen(tx, ty)
+	var center: Vector2 = screen_pos + Vector2(TILE_SIZE - 9, 9) * _zoom
+	var r: float = 7 * _zoom
+	draw_circle(center, r, Color(0.1, 0.1, 0.1, 0.9))
+	draw_arc(center, r, 0, TAU, 16, Color.white, 1.0)
+	var font = _get_badge_font()
+	if font != null:
+		var txt: String = str(count)
+		var ts: Vector2 = font.get_string_size(txt)
+		draw_string(font, center - ts * 0.5 + Vector2(0, ts.y * 0.35), txt, Color.white)
+
+var _badge_font = null
+var _badge_font_loaded: bool = false
+
+func _get_badge_font():
+	if not _badge_font_loaded:
+		_badge_font_loaded = true
+		var ctrl: Control = Control.new()
+		add_child(ctrl)
+		_badge_font = ctrl.get_font("font")
+		ctrl.queue_free()
+	return _badge_font
 
 func _player_color(player_id: int, gs) -> Color:
 	if player_id == WILD_OWNER_ID:
