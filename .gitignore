@@ -1,7 +1,13 @@
 # Godot-generated files
 .import/
 export.cfg
-export_presets.cfg
+# export_presets.cfg is tracked so release exports are reproducible.
+
+# Release build binaries — large platform artifacts are distributed via release
+# hosting, not committed to git. Metadata (README.md, SHA256SUMS) stays tracked.
+releases/**/linux/*
+releases/**/windows/*
+releases/**/macos/*
 
 # Godot 3 editor settings
 .godot/
