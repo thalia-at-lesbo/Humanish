@@ -173,6 +173,16 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	var total_prod: int = 0
 	var total_commerce: int = 0
 
+	# Per-improvement civic output bonuses (§8): Universal Suffrage (town
+	# production), Free Speech (town commerce), Caste System (workshop production),
+	# State Property (watermill/farm production), Environmentalism (windmill
+	# commerce). Summed once, applied per matching worked tile below.
+	var town_prod: int = PolicyEffects.sum_int(player, db, "town_production")
+	var town_comm: int = PolicyEffects.sum_int(player, db, "town_commerce")
+	var workshop_prod: int = PolicyEffects.sum_int(player, db, "workshop_production")
+	var watermill_farm_prod: int = PolicyEffects.sum_int(player, db, "watermill_farm_production")
+	var windmill_comm: int = PolicyEffects.sum_int(player, db, "windmill_commerce")
+
 	for wt in s.worked_tiles:
 		var tile: Tile = gs.map.get_tile(int(wt[0]), int(wt[1]))
 		if tile == null:
@@ -181,6 +191,16 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 		total_food     += out[IDs.Output.FOOD]
 		total_prod     += out[IDs.Output.PRODUCTION]
 		total_commerce += out[IDs.Output.COMMERCE]
+		match tile.improvement_id:
+			"town":
+				total_prod     += town_prod
+				total_commerce += town_comm
+			"workshop":
+				total_prod     += workshop_prod
+			"watermill", "farm":
+				total_prod     += watermill_farm_prod
+			"windmill":
+				total_commerce += windmill_comm
 
 	# Structures bonus
 	for struct_id in s.structures:
@@ -199,6 +219,9 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	var spec_count: int = 0
 	for spec_type in s.specialists:
 		spec_count += int(s.specialists[spec_type])
+	# Mercantilism grants a free specialist per city — it yields commerce like any
+	# specialist but consumes no population (§8).
+	spec_count += PolicyEffects.sum_int(player, db, "free_specialist_per_city")
 	total_commerce += spec_count * db.get_constant("specialist_commerce", 3)
 
 	# Golden Age: every worked tile yields +1 food/production/commerce (§14.4).
@@ -209,12 +232,20 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 		total_prod     += worked * ga_bonus
 		total_commerce += worked * ga_bonus
 
+	# Bureaucracy boosts the capital's commerce and production (§8). The capital is
+	# the player's earliest-founded surviving settlement.
+	if _find_capital(gs, player.id) == s:
+		total_commerce += Fixed.scale(total_commerce,
+			PolicyEffects.sum_int(player, db, "capital_commerce"))
+		total_prod += Fixed.scale(total_prod,
+			PolicyEffects.sum_int(player, db, "capital_production"))
+
 	s.output_food       = total_food
 	s.output_production = total_prod
 	s.output_commerce   = total_commerce
 
 	# Wellbeing: deficit reduces food surplus
-	_update_wellbeing(gs, s, db)
+	_update_wellbeing(gs, s, player, db)
 	var effective_food: int = total_food - s.wellbeing_deficit
 	var consumed: int = s.population * 2
 	var surplus: int = effective_food - consumed
@@ -241,7 +272,7 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	# Contentment update
 	_update_contentment(gs, s, player, db)
 
-static func _update_wellbeing(gs: GameState, s: Settlement, db: DataDB) -> void:
+static func _update_wellbeing(gs: GameState, s: Settlement, player: Player, db: DataDB) -> void:
 	var pos: int = 0
 	var neg: int = s.population  # base negative from population
 	for struct_id in s.structures:
@@ -251,6 +282,8 @@ static func _update_wellbeing(gs: GameState, s: Settlement, db: DataDB) -> void:
 	# Adopted belief wellbeing (§8)
 	if s.belief_id != "":
 		pos += int(db.beliefs.get(s.belief_id, {}).get("health_bonus", 0))
+	# Empire-wide civic health (Environmentalism, §8).
+	pos += PolicyEffects.sum_int(player, db, "health_empire")
 	# Fresh water from an adjacent water body or a river/oasis feature (§4.6)
 	if _has_fresh_water(gs, s, db):
 		pos += db.get_constant("fresh_water_health", 2)
@@ -295,6 +328,30 @@ static func _update_contentment(gs: GameState, s: Settlement, player: Player, db
 		var g_bonus: int = garrison * db.get_constant("garrison_happiness_per_unit", 1)
 		var g_cap: int = db.get_constant("garrison_happiness_cap", 3)
 		pos += g_cap if g_bonus > g_cap else g_bonus
+		# Hereditary Rule adds further, uncapped happiness per garrisoned unit (§8).
+		pos += garrison * PolicyEffects.sum_int(player, db, "happiness_per_garrison")
+
+	# Civic happiness effects (§8). Barracks comfort (Nationhood), per-religion
+	# comfort (Free Religion; the model carries one belief per city), happiness per
+	# worked forest/jungle tile (Environmentalism), and a flat bonus in the empire's
+	# largest cities (Representation).
+	if s.has_structure("barracks"):
+		pos += PolicyEffects.sum_int(player, db, "barracks_happiness")
+	if s.belief_id != "":
+		pos += PolicyEffects.sum_int(player, db, "happiness_per_religion")
+	var forest_bonus: int = PolicyEffects.sum_int(player, db, "happiness_per_forest")
+	if forest_bonus > 0:
+		var forested: int = 0
+		for wt in s.worked_tiles:
+			var ft: Tile = gs.map.get_tile(int(wt[0]), int(wt[1]))
+			if ft != null and (ft.feature_id == "forest" or ft.feature_id == "jungle"):
+				forested += 1
+		pos += forested * forest_bonus
+	var largest_bonus: int = PolicyEffects.sum_int(player, db, "happiness_largest_cities")
+	if largest_bonus > 0:
+		var top_n: int = db.get_constant("policy_largest_cities_count", 5)
+		if s.id in PolicyEffects.largest_city_ids(gs, player.id, top_n):
+			pos += largest_bonus
 
 	# Overcrowding anger above a comfortable size (§4.5)
 	var crowd_thresh: int = db.get_constant("overcrowding_threshold", 6)
@@ -317,7 +374,12 @@ static func _update_contentment(gs: GameState, s: Settlement, player: Player, db
 		var fatigue_total: int = 0
 		for k in fa.war_fatigue:
 			fatigue_total += int(fa.war_fatigue[k])
-		neg_anger += fatigue_total / max(1, db.get_constant("war_fatigue_anger_divisor", 4))
+		var war_anger: int = fatigue_total / max(1, db.get_constant("war_fatigue_anger_divisor", 4))
+		# Police State suppresses a share of war anger (§8).
+		var war_reduction: int = PolicyEffects.sum_int(player, db, "war_anger_reduction")
+		if war_reduction > 0:
+			war_anger -= Fixed.scale(war_anger, war_reduction)
+		neg_anger += war_anger
 
 	# Convert anger percentage to negative sentiment citizens
 	var anger_div: int = db.get_constant("anger_divisor", 100)
@@ -337,9 +399,14 @@ static func _settlement_production(gs: GameState, s: Settlement,
 	var pace: Dictionary = db.get_pace(gs.pace_id)
 	var pace_scale: int = int(pace.get("build_scale", 100))
 	var prod: int = Fixed.scale(s.output_production, pace_scale)
-	s.production_store += prod
 
 	var item: Dictionary = s.production_queue[0]
+	# Civic production effects depend on what is currently being built (§8).
+	prod += _policy_production_delta(gs, s, player, db, item, prod)
+	if prod < 0:
+		prod = 0
+	s.production_store += prod
+
 	var cost: int = _item_cost(item, db, player, pace)
 	if cost <= 0:
 		return
@@ -348,6 +415,40 @@ static func _settlement_production(gs: GameState, s: Settlement,
 		s.production_store -= cost
 		_complete_item(gs, s, player, item)
 		s.production_queue.remove(0)
+
+# Per-turn production adjustment from active civics for the item at the head of
+# the queue (§8): Police State's percentage bonus to military units, Organized
+# Religion's flat bonus for religious buildings, and Pacifism's drain per
+# garrisoned military unit. `base_prod` is this turn's settlement production,
+# which the percentage bonuses scale off.
+static func _policy_production_delta(gs: GameState, s: Settlement,
+		player: Player, db: DataDB, item: Dictionary, base_prod: int) -> int:
+	var delta: int = 0
+	var itype: String = item.get("type", "unit")
+	var iid: String = item.get("id", "")
+	if itype == "unit":
+		if _is_military_unit(db, iid):
+			delta += Fixed.scale(base_prod,
+				PolicyEffects.sum_int(player, db, "military_production"))
+	elif itype == "structure":
+		if PolicyEffects.is_religious_structure(db, iid):
+			delta += PolicyEffects.sum_int(player, db, "religious_building_production")
+	# Pacifism: each garrisoned military unit drains production (effect is negative).
+	var drain: int = PolicyEffects.sum_int(player, db, "production_per_military_unit")
+	if drain != 0:
+		var mil: int = 0
+		for u in gs.units:
+			if u.owner_player_id == player.id and u.x == s.x and u.y == s.y \
+					and _is_military_unit(db, u.unit_type_id):
+				mil += 1
+		delta += mil * drain
+	return delta
+
+# A unit type that counts as "military" for civic effects: anything that is not a
+# civilian or a Great Person.
+static func _is_military_unit(db: DataDB, unit_id: String) -> bool:
+	var cls: String = db.get_unit(unit_id).get("classification", "")
+	return cls != "" and cls != "civilian" and cls != "great_person"
 
 static func _item_cost(item: Dictionary, db: DataDB, player: Player,
 		pace: Dictionary) -> int:
@@ -379,6 +480,14 @@ static func _complete_item(gs: GameState, s: Settlement,
 			u.base_strength = int(udata.get("base_strength", 5))
 			u.movement_total = int(udata.get("movement", 200))
 			u.movement_left = u.movement_total
+			# Civic starting experience for newly trained military units (§8):
+			# Vassalage's flat bonus, plus Theocracy's bonus when the city has a
+			# state religion (modelled as an adopted belief).
+			if _is_military_unit(gs.db, iid):
+				var xp: int = PolicyEffects.sum_int(player, gs.db, "new_unit_xp")
+				if s.belief_id != "":
+					xp += PolicyEffects.sum_int(player, gs.db, "state_religion_unit_xp")
+				u.experience = xp
 			gs.units.append(u)
 		"structure":
 			if not s.has_structure(iid):
@@ -400,6 +509,9 @@ static func _settlement_culture(gs: GameState, s: Settlement, player: Player) ->
 	var culture_out: int = s.output_commerce
 	if player != null:
 		culture_out = player.split_commerce(s.output_commerce)[2]
+		# Free Speech amplifies culture output in every city (§8).
+		culture_out += Fixed.scale(culture_out,
+			PolicyEffects.sum_int(player, db, "culture_all_cities"))
 	s.culture_total += culture_out
 
 	# Ring expansion
@@ -427,6 +539,11 @@ static func _special_person_progress(gs: GameState, s: Settlement) -> void:
 	var points: int = 0
 	for spec_type in s.specialists:
 		points += int(s.specialists[spec_type])
+	# Pacifism accelerates Great Person birth (§8, §14).
+	var player: Player = gs.get_player(s.owner_player_id)
+	if player != null:
+		points += Fixed.scale(points,
+			PolicyEffects.sum_int(player, gs.db, "great_person_rate"))
 	s.special_person_points += points
 
 	# When the rising threshold is crossed, produce a special person and apply
@@ -509,24 +626,37 @@ static func _update_treasury(gs: GameState, player: Player) -> void:
 		var split: Array = player.split_commerce(s.output_commerce)
 		income += split[0]  # finance
 
-	# Upkeep for units
+	# Vassalage waives unit upkeep for a number of units per city (§8). Count the
+	# player's cities, then exempt that many units below.
+	var city_count: int = 0
+	for s in gs.settlements:
+		if s.owner_player_id == player.id:
+			city_count += 1
+	var free_units: int = city_count * PolicyEffects.sum_int(player, db, "free_units_per_city")
+
+	# Upkeep for units (the first `free_units`, in id order, are free).
 	var upkeep: int = 0
 	for u in gs.units:
 		if u.owner_player_id != player.id:
+			continue
+		if free_units > 0:
+			free_units -= 1
 			continue
 		var udata: Dictionary = db.get_unit(u.unit_type_id)
 		upkeep += int(udata.get("upkeep", 0))
 
 	# Settlement upkeep scales with distance from the capital and settlement size
-	# (§6.1). The capital is the player's earliest-founded settlement.
+	# (§6.1). The capital is the player's earliest-founded settlement. State
+	# Property removes the distance term entirely (§8).
 	var capital: Settlement = _find_capital(gs, player.id)
+	var no_distance: bool = PolicyEffects.has_flag(player, db, "no_distance_maintenance")
 	var dist_scale: int = db.get_constant("upkeep_distance_scale", 1)
 	var size_scale: int = db.get_constant("upkeep_size_scale", 1)
 	for s in gs.settlements:
 		if s.owner_player_id != player.id:
 			continue
 		var dist: int = 0
-		if capital != null:
+		if capital != null and not no_distance:
 			dist = gs.map.distance(capital.x, capital.y, s.x, s.y)
 		upkeep += dist * dist_scale + (s.population * size_scale) / 4
 
@@ -590,11 +720,19 @@ static func _apply_research(gs: GameState, player: Player) -> void:
 	var db: DataDB = gs.db
 	# Compute total research output from all settlements
 	var research_income: int = 0
+	var scientists: int = 0
 	for s in gs.settlements:
 		if s.owner_player_id != player.id:
 			continue
 		var split: Array = player.split_commerce(s.output_commerce)
 		research_income += split[1]  # research
+		scientists += int(s.specialists.get("scientist", 0))
+
+	# Representation: scientist specialists yield extra science directly (§8).
+	research_income += scientists * PolicyEffects.sum_int(player, db, "science_per_scientist")
+	# Free Religion: a percentage boost to total science output (§8).
+	research_income += Fixed.scale(research_income,
+		PolicyEffects.sum_int(player, db, "science_output"))
 
 	player.research_store += research_income
 
@@ -640,6 +778,18 @@ static func _apply_intelligence(gs: GameState, player: Player) -> void:
 				player.intel_points[target_aid] = 0
 			var share: int = intel / max(1, alliance.contacts.size())
 			player.intel_points[target_aid] += share
+
+	# Nationhood adds a flat espionage yield each turn, spread across known
+	# alliances like the commerce-derived intel above (§8).
+	var espionage: int = PolicyEffects.sum_int(player, gs.db, "espionage")
+	if espionage > 0:
+		var alliance2: Alliance = gs.get_player_alliance(player.id)
+		if alliance2 != null and not alliance2.contacts.empty():
+			var share2: int = espionage / max(1, alliance2.contacts.size())
+			for target_aid in alliance2.contacts:
+				if not player.intel_points.has(target_aid):
+					player.intel_points[target_aid] = 0
+				player.intel_points[target_aid] += share2
 
 static func _tick_states(gs: GameState, player: Player) -> void:
 	if player.transition_turns > 0:

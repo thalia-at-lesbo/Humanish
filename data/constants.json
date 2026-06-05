@@ -34,6 +34,7 @@
   "garrison_happiness_cap": 3,
   "overcrowding_threshold": 6,
   "overcrowding_anger_per_pop": 3,
+  "policy_largest_cities_count": 5,
   "fresh_water_health": 2,
   "upkeep_distance_scale": 1,
   "upkeep_size_scale": 1,

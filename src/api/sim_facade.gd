@@ -513,11 +513,17 @@ func _cmd_rush_production(cmd: Dictionary) -> bool:
 	var remaining: int = max(0, cost - s.production_store)
 	match method:
 		"treasury":
+			# Rushing with gold requires a civic that allows it (Universal Suffrage, §8).
+			if not PolicyEffects.has_flag(p, _db, "can_rush_with_gold"):
+				return false
 			if p.treasury < remaining:
 				return false
 			p.treasury -= remaining
 			s.production_store = cost
 		"population":
+			# Sacrificing population requires a civic that allows it (Slavery, §8).
+			if not PolicyEffects.has_flag(p, _db, "rush_by_pop"):
+				return false
 			if s.population <= 1:
 				return false
 			s.population -= 1
@@ -541,7 +547,14 @@ func _cmd_build_improvement(cmd: Dictionary) -> bool:
 	if imp.empty():
 		return false
 	u.building_improvement = imp_id
-	u.build_turns_left = int(imp.get("build_turns", 5))
+	# Serfdom speeds improvement construction (§8): fewer build turns.
+	var bt: int = int(imp.get("build_turns", 5))
+	var worker_speed: int = PolicyEffects.sum_int(p, _db, "worker_speed_bonus")
+	if worker_speed > 0:
+		bt = (bt * 100) / (100 + worker_speed)
+		if bt < 1:
+			bt = 1
+	u.build_turns_left = bt
 	u.has_moved = true
 	u.movement_left = 0
 	return true

@@ -29,25 +29,53 @@ win-condition types. The remaining content tables (wonders, buildings, resources
 promotions, terrain) were **not** exhaustively audited entry-by-entry against the
 prose — only structurally. A full content reconciliation is still outstanding.
 
-## 2. Policy / civic effects are defined but not applied
+## 2. Policy / civic effects — most now applied; a few remain blocked
 
-`policies.json` now matches `game-data.md` §8 (five categories, 26 civics), but
-only the *mechanical* policy fields are read by the sim:
+`policies.json` matches `game-data.md` §8 (five categories, 26 civics). The
+*mechanical* fields were always read (`slider_increment`, `slider_min_research`
+→ `sim_facade._cmd_set_sliders`; `transition_turns` → anarchy tick in
+`turn_engine._tick_states`; `anger_modifier` → `_update_contentment`;
+`upkeep_modifier` → `_update_treasury`). As of 2026-06-05 the per-civic `effects`
+dictionaries are read too, through the single helper `sim/policy_effects.gd`
+(`PolicyEffects.sum_int` / `has_flag`), wired into the relevant sim modules:
 
-- **Wired:** `slider_increment`, `slider_min_research` (→ `sim_facade._cmd_set_sliders`),
-  `transition_turns` (→ anarchy tick in `turn_engine._tick_states`),
-  `anger_modifier` (→ `_update_contentment`), `upkeep_modifier` (→ `_update_treasury`).
-- **Inert (no reader anywhere in `src/`):** every per-civic `effects` dictionary —
-  e.g. `happiness_per_garrison`, `science_per_scientist`, `can_rush_with_gold`,
-  `military_production`, `war_anger_reduction`, `capital_commerce`,
-  `unlimited_specialists`, `great_person_rate`, `culture_all_cities`, `can_draft`,
-  trade-route bonuses — plus the bare flags `rush_by_pop` (Slavery) and
-  `worker_speed_bonus` (Serfdom).
+- **Happiness / health** (`turn_engine._update_contentment` / `_update_wellbeing`):
+  `happiness_per_garrison`, `barracks_happiness`, `happiness_per_forest`,
+  `happiness_per_religion`, `happiness_largest_cities`, `war_anger_reduction`,
+  `health_empire`.
+- **Output** (`_settlement_growth`): `town_production`, `town_commerce`,
+  `workshop_production`, `watermill_farm_production`, `windmill_commerce`,
+  `capital_commerce`, `capital_production`, `free_specialist_per_city`; and
+  `culture_all_cities` in `_settlement_culture`.
+- **Production** (`_settlement_production` via `_policy_production_delta`):
+  `military_production`, `religious_building_production`,
+  `production_per_military_unit`.
+- **Research / intel** (`_apply_research` / `_apply_intelligence`):
+  `science_per_scientist`, `science_output`, `espionage`.
+- **Treasury** (`_update_treasury`): `free_units_per_city`,
+  `no_distance_maintenance`.
+- **Commands** (`sim_facade`): `can_rush_with_gold` and the bare `rush_by_pop`
+  gate the two rush methods in `_cmd_rush_production`; the bare
+  `worker_speed_bonus` shortens build time in `_cmd_build_improvement`.
+- **Unit/GP** (`_complete_item` / `_special_person_progress`): `new_unit_xp` and
+  `state_religion_unit_xp` set a new military unit's starting experience;
+  `great_person_rate` scales Great-Person point accrual.
 
-So selecting a civic currently changes upkeep, anarchy length, anger and slider
-shape, but none of its headline gameplay effect from the design table. Wiring each
-`effects` key into the relevant sim module (`TurnEngine`, `Combat`, `Settlement`)
-is the open work.
+Covered by `tests/sim/test_policy_effects.gd`.
+
+**Still inert — blocked on an unbuilt subsystem, not on the wiring:**
+
+- `unlimited_specialists` (Caste System) — the sim caps specialists only by
+  population; there is no per-building specialist *slot* ceiling to lift, so the
+  flag has nothing to relax until a slot system exists.
+- `faster_cottage_growth` (Emancipation) and Emancipation's cross-faction
+  unhappiness — cottage→hamlet→village→town upgrading is not modelled.
+- `trade_route_per_city`, `no_foreign_trade_routes` (Free Market / Mercantilism)
+  and `corporation_maintenance_reduction` — trade routes are unbuilt (§3), and
+  econ orgs charge a per-spread cost rather than ongoing maintenance.
+- `can_draft` (Nationhood), `missionary_without_monastery` (Organized Religion),
+  `blocks_nonstate_spread` (Theocracy) — tied to the unbuilt draft / missionary /
+  religion-spread-restriction mechanics noted in §3.
 
 ## 3. UI vocabulary: the spec is a deliberate superset
 
@@ -90,6 +118,12 @@ fact implemented and have been corrected there: `WORLD_TILE_UPKEEP` →
 
 ## Recently reconciled
 
+- **2026-06-05** — Most civic `effects` are now applied (§2). Added
+  `sim/policy_effects.gd` as the single reader and wired the headline gameplay
+  bonuses into `TurnEngine` and `SimFacade`; `tests/sim/test_policy_effects.gd`
+  covers each. Only effects blocked on an unbuilt subsystem (specialist slots,
+  cottage growth, trade routes, draft/missionary/religion-spread) remain inert —
+  see the list under §2.
 - **2026-06-05** — `policies.json` brought in line with `game-data.md` §8: removed
   the undocumented 6th `civic` category (communism / anarcho-communism /
   anarcho-capitalism / fascism) and the stray `monarchy` government policy, and
