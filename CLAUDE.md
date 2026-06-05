@@ -67,7 +67,12 @@ scenes/main.tscn               (wires WorldView, HUD, InputRouter, HotseatManage
 | `SaveLoad` | `JSON.print(gs.serialize())` / `GameState.deserialize()`; computes `state_hash()`. |
 | `Commands` | Static factories for all command Dictionaries; no logic, pure construction. |
 | `StartMenu` | Entry-point scene; loads `DataDB`, routes to `SetupScreen` or quits. |
-| `SetupScreen` | Collects new-game parameters (players, society, world size, pace, difficulty) and calls back with a ready `SimFacade`. |
+| `SetupScreen` | Collects new-game parameters (players, society, per-player human/AI toggle, world size, pace, difficulty) and calls back with a ready `SimFacade`. |
+| `PlayerAI` | Simple deterministic computer player; a facade *client* (like the UI) that drives a flagged player's whole turn via `apply_command`. Pure static; lives in `src/api/`. |
+
+### Computer players (`PlayerAI`)
+
+`Player.is_ai` marks a player as computer-controlled (serialized; default `false`; set from each player config's `is_ai` in `SimFacade.setup()`, toggled per-player by the `SetupScreen` row checkboxes). `PlayerAI` (`src/api/player_ai.gd`) is **not** part of `sim/` — it is a *client* of `SimFacade`, exactly like the human UI: it only mutates state through `apply_command`, and it draws every random choice from the shared `gs.rng` (never its own generator), so an AI turn is reproducible and is captured by save/load. `PlayerAI.take_turn(facade, player_id)` runs the whole turn then ends it; the decision logic is deliberately simple — cheapest researchable tech, latest-unlocked policy per civic category, each city's queue refilled with every buildable unit/structure cheapest-first (replanned only when empty), and ~50% of units garrisoning their nearest city while the rest wander and pick random actions. In the scene layer, `HotseatManager` watches `player_turn_started` and `call_deferred`s `PlayerAI.take_turn` for `is_ai` players, chaining through consecutive AI players until a human's turn opens the pass-device screen. Like any new `class_name`, `PlayerAI` is registered in `project.godot`'s `_global_script_classes`.
 
 ### Godot 3 GDScript constraints to remember
 
