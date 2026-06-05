@@ -153,16 +153,16 @@ func test_zero_culture_slider_accrues_nothing() -> void:
 func test_wellbeing_deficit_non_negative() -> void:
 	var gs = make_gs(1)
 	var s = make_settlement(gs, 1, 5, 5, 3)
-	TurnEngine._update_wellbeing(gs, s, gs.db)
+	TurnEngine._update_wellbeing(gs, s, gs.get_player(1), gs.db)
 	assert_true(s.wellbeing_deficit >= 0, "Wellbeing deficit is non-negative")
 
 func test_fresh_water_improves_wellbeing() -> void:
 	var gs = make_gs(1)
 	var land_s = make_settlement(gs, 1, 2, 2, 3)  # surrounded by grassland
-	TurnEngine._update_wellbeing(gs, land_s, gs.db)
+	TurnEngine._update_wellbeing(gs, land_s, gs.get_player(1), gs.db)
 	var dry_pos: int = land_s.wellbeing_positive
 	gs.map.get_tile(3, 2).terrain_id = "coast"  # adjacent water
-	TurnEngine._update_wellbeing(gs, land_s, gs.db)
+	TurnEngine._update_wellbeing(gs, land_s, gs.get_player(1), gs.db)
 	assert_gt(land_s.wellbeing_positive, dry_pos, "Adjacent fresh water improves wellbeing")
 
 # ── Specialist output (§6.5) ─────────────────────────────────────────────────
