@@ -27,6 +27,34 @@ jobs:
 #      - name: Run tests
 #        run: godot --no-window -s addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit
 
+      # The godot-ci image ships the export templates under the image build
+      # user's HOME (/root), but GitHub Actions container jobs reset HOME to
+      # /github/home, so Godot 3.6.2 looks in an empty path and aborts with
+      # "No export template found". Copy them to where it expects; fall back to
+      # downloading the official 3.6.2 templates if the image lacks them.
+      - name: Install export templates
+        run: |
+          set -eux
+          DEST="$HOME/.local/share/godot/templates/3.6.2.stable"
+          mkdir -p "$DEST"
+          SRC=""
+          for c in \
+            /root/.local/share/godot/templates/3.6.2.stable \
+            /root/.local/share/godot/export_templates/3.6.2.stable; do
+            if [ -f "$c/version.txt" ]; then SRC="$c"; break; fi
+          done
+          if [ -n "$SRC" ]; then
+            cp -r "$SRC/." "$DEST/"
+          fi
+          if [ ! -f "$DEST/linux_x11_64_release" ]; then
+            echo "Templates not present in image — downloading official 3.6.2 templates"
+            curl -fsSL -o /tmp/tpl.tpz \
+              https://github.com/godotengine/godot/releases/download/3.6.2-stable/Godot_v3.6.2-stable_export_templates.tpz
+            unzip -q /tmp/tpl.tpz -d /tmp/tpl
+            cp -r /tmp/tpl/templates/. "$DEST/"
+          fi
+          ls "$DEST" | head
+
       # Godot refuses to export into a directory that does not exist.
       - name: Prepare output directories
         run: mkdir -p build/linux build/windows build/macos
