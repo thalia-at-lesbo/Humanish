@@ -72,11 +72,17 @@ func _build_ui() -> void:
 		society_btn.add_item("— No Society —")
 		for sid in society_ids:
 			society_btn.add_item(societies[sid].get("name", sid))
+		# Per-player computer-control toggle. Player 1 defaults to human; the
+		# rest default to AI so a solo player gets opponents out of the box.
+		var ai_check: CheckBox = CheckBox.new()
+		ai_check.text = "AI"
+		ai_check.pressed = i >= 1
 		row.add_child(lbl)
 		row.add_child(edit)
 		row.add_child(society_btn)
+		row.add_child(ai_check)
 		_player_rows.append({"row": row, "name_edit": edit, "society_btn": society_btn,
-				"society_ids": society_ids})
+				"society_ids": society_ids, "ai_check": ai_check})
 		vbox.add_child(row)
 		row.visible = i < 2
 
@@ -187,7 +193,8 @@ func _on_start_pressed() -> void:
 			"leader_id": leader_id,
 			"traits": traits,
 			"starting_gold": starting_gold,
-			"starting_units": starting_units
+			"starting_units": starting_units,
+			"is_ai": row_data["ai_check"].pressed
 		})
 
 	var world_size_id: String = _world_size_btn.get_item_text(_world_size_btn.selected)
