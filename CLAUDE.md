@@ -5,8 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Run all tests (headless) — -ginclude_subdirs recurses into tests/{core,world,sim,api,scenes}
-godot3 --no-window -s addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit
+# Run everything in order: unit suites, then the integration playthrough gate.
+./run_tests.sh                       # override engine with GODOT=… (default: godot3)
+
+# Unit suites only — note tests/integration is excluded by listing the unit dirs
+godot3 --no-window -s addons/gut/gut_cmdln.gd \
+  -gdir=res://tests/core,res://tests/world,res://tests/sim,res://tests/api,res://tests/scenes \
+  -ginclude_subdirs -gexit
+
+# Integration playthrough only (the final gate)
+godot3 --no-window -s addons/gut/gut_cmdln.gd -gdir=res://tests/integration -ginclude_subdirs -gexit
 
 # Run a single test file
 godot3 --no-window -s addons/gut/gut_cmdln.gd -gtest=res://tests/sim/test_combat.gd -gexit
@@ -15,7 +23,9 @@ godot3 --no-window -s addons/gut/gut_cmdln.gd -gtest=res://tests/sim/test_combat
 godot3 --no-window -s addons/gut/gut_cmdln.gd -gtest=res://tests/sim/test_combat.gd -gunit_test_name=test_combat_same_seed_identical_outcome -gexit
 ```
 
-The test framework is **GUT 7.4.3** (Godot 3.x). Test suites are organised by functional area, mirroring the source layout: `tests/core/`, `tests/world/`, `tests/sim/`, `tests/api/`, `tests/scenes/` — one file per module/subsystem (e.g. `combat.gd` → `tests/sim/test_combat.gd`). New tests go in the file for the subsystem they exercise; a brand-new subsystem gets a new `test_<name>.gd` under the matching layer.
+> Heads-up: `-gdir=res://tests -ginclude_subdirs` would recurse into **all** of `tests/`, including `tests/integration`. To keep the unit run separate from the final integration gate, run them as two phases (use `./run_tests.sh`, which encodes the ordering and is mirrored by `.github/workflows/build.yml`).
+
+The test framework is **GUT 7.4.3** (Godot 3.x). Test suites are organised by functional area, mirroring the source layout: `tests/core/`, `tests/world/`, `tests/sim/`, `tests/api/`, `tests/scenes/` — one file per module/subsystem (e.g. `combat.gd` → `tests/sim/test_combat.gd`). New tests go in the file for the subsystem they exercise; a brand-new subsystem gets a new `test_<name>.gd` under the matching layer. `tests/integration/` holds end-to-end **playthrough** suites that drive a whole game through `SimFacade` (most interaction families in one scenario); they run as the final gate **after** the unit suites, never mixed into them.
 
 Most suites extend the shared fixture `"res://tests/support/sim_fixture.gd"` (which itself extends GUT's `test.gd`) for the common scaffolding — `make_db()`, `make_gs(num_players, seed)`, `make_unit/make_warrior/make_settlement/make_gp`, `bare_facade(gs)`, `setup_facade(...)`, `hooks()`, `run_turns(...)`. Pure-math/data suites with no game state (e.g. `test_fixed`, `test_slider_math`) extend `"res://addons/gut/test.gd"` directly. The fixture file is **not** collected as a suite — GUT only picks up files named `test_*`. Each `test_*` method is one test case.
 
