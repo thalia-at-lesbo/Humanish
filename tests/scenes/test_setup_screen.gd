@@ -14,8 +14,10 @@ extends "res://tests/support/sim_fixture.gd"
 # society, and an error is shown.
 
 var _started = false
-func _on_start(_facade, _db) -> void:
+var _started_facade = null
+func _on_start(facade, _db) -> void:
 	_started = true
+	_started_facade = facade
 
 func test_blocks_start_until_every_player_picks_a_society() -> void:
 	var screen = load("res://scenes/setup/setup_screen.gd").new()
@@ -41,3 +43,25 @@ func test_blocks_start_until_every_player_picks_a_society() -> void:
 		"No players should be missing a society now")
 	screen._on_start_pressed()
 	assert_true(_started, "Start proceeds once all players have chosen a society")
+
+func test_ai_toggle_flows_into_player_is_ai() -> void:
+	var screen = load("res://scenes/setup/setup_screen.gd").new()
+	screen.anchor_right = 1.0
+	screen.anchor_bottom = 1.0
+	add_child_autofree(screen)
+	screen.init(make_db(), funcref(self, "_on_start"))
+	_started = false
+	_started_facade = null
+
+	# Two players, both with a society so Start proceeds.
+	screen._player_rows[0]["society_btn"].select(1)
+	screen._player_rows[1]["society_btn"].select(1)
+	# Player 1 = human, player 2 = AI (its default).
+	screen._player_rows[0]["ai_check"].pressed = false
+	screen._player_rows[1]["ai_check"].pressed = true
+
+	screen._on_start_pressed()
+	assert_true(_started, "Start should proceed")
+	var gs = _started_facade.get_state()
+	assert_false(gs.get_player(1).is_ai, "Player 1 is human")
+	assert_true(gs.get_player(2).is_ai, "Player 2 is AI")
