@@ -1,7 +1,13 @@
 # Godot-generated files
 .import/
 export.cfg
-export_presets.cfg
+# export_presets.cfg is tracked so release exports are reproducible.
+
+# Build output — CI exports here and uploads the artifacts; the binaries
+# themselves are not committed. The directory is kept via build/.gitkeep so the
+# export target exists.
+build/*
+!build/.gitkeep
 
 # Godot 3 editor settings
 .godot/

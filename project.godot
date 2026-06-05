@@ -244,7 +244,7 @@ _global_script_class_icons={
 
 config/name="Humanish"
 config/description="Turn-based 4X strategy game — headless engine + flat-color prototype UI"
-config/version="0.2.0"
+config/version="0.3.0"
 run/main_scene="res://scenes/menus/start_menu.tscn"
 
 [physics]
