@@ -52,7 +52,6 @@
   "commando":   { "id": "commando",   "name": "Commando",   "prereqs": ["combat5"], "applies_to": "land",   "move_after_attack": true },
   "leadership": { "id": "leadership", "name": "Leadership", "prereqs": [],          "applies_to": "all",    "adjacent_xp_bonus": 100 },
   "withdrawal": { "id": "withdrawal", "name": "Withdrawal", "prereqs": ["combat1"], "applies_to": "mounted","withdrawal_chance_bonus": 25 },
-  "disciplined":{ "id": "disciplined","name": "Disciplined","prereqs": [],          "applies_to": "all",    "healing_bonus": 10 },
 
   "navigation1": { "id": "navigation1", "name": "Navigation I",  "prereqs": [],             "applies_to": "naval", "movement_bonus": 100 },
   "navigation2": { "id": "navigation2", "name": "Navigation II", "prereqs": ["navigation1"],"applies_to": "naval", "movement_bonus": 100 },

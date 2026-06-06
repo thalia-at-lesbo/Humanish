@@ -25,9 +25,40 @@ worth stating so the two aren't mistaken for a content gap:
 | Corporations | `econ_orgs` (`econ_orgs.json`) |
 
 Counts spot-checked and consistent: traits 11, leaders 52, societies 34, the six
-win-condition types. The remaining content tables (wonders, buildings, resources,
-promotions, terrain) were **not** exhaustively audited entry-by-entry against the
-prose — only structurally. A full content reconciliation is still outstanding.
+win-condition types.
+
+As of 2026-06-05 the remaining content tables (wonders, buildings, resources,
+promotions, terrain) have been **reconciled entry-by-entry** against the prose.
+Wonders (world + national) match the spec exactly on cost, tech, resource and
+headline effect. The few drift items found were corrected (see *Recently
+reconciled*). What remains is a set of **deliberate model/representation choices**,
+catalogued here so they aren't re-flagged as content gaps:
+
+- **Terrain model.** §11.2 describes Hill/Peak as landform *modifiers* on a base
+  terrain; the engine instead carries standalone `hills` (food 1 / prod 2) and
+  `mountain` terrains in `terrains.json`. Relatedly, the engine's base Grassland
+  is `2/1/0` (it grants +1 base Production) where the §11.1 table lists `2/0/0`,
+  and `mountain` is impassable with prod 1 / +50% defence where §11.2 Peak lists
+  "—". These are intentional engine values.
+- **Resource siting.** §10.2/§10.3 place several luxuries/bonus resources on
+  *features* (Dye/Silk on Forest, Spices on Jungle, Sugar/Banana on Flood
+  Plains/Jungle) that the engine models separately in `features.json`; the data
+  instead attaches those resources to base terrains (grassland/plains/desert).
+  Yields, happiness and health all match — only the host tile differs.
+- **Specialist slots.** §14.5's per-building slot counts are approximate; the
+  `specialist_slots` in `structures.json` are authoritative (e.g. Library/Madrassa
+  grant 2 Scientist slots, Market/Forum 2 Merchant slots).
+- **Building XP / free-promotion effects are present but inert.** The per-building
+  XP keys (`land_xp`, `mounted_xp`, `naval_xp`, `archery_xp`, `siege_xp`,
+  `air_xp`, `military_xp`) and `heals_units` / `free_promotion(_all)` are carried
+  in the data but not yet read by any sim site — the building-XP / free-promotion
+  subsystem is unbuilt (same status as the inert effects in §2). Only the *policy*
+  key `new_unit_xp` is consumed (`turn_engine.gd`).
+- **Minor unmodelled wonder sub-clauses.** A handful of atmospheric secondary
+  effects are not represented: Stonehenge "centers world map", the Colosseum's
+  culture-rate happiness, Angkor Wat "allows 3 Priest specialists", and the
+  religion-building secondary lines on Apostolic Palace / Sistine Chapel. The
+  headline effect of every wonder/building is present.
 
 ## 2. Policy / civic effects — most now applied; a few remain blocked
 
@@ -118,6 +149,17 @@ fact implemented and have been corrected there: `WORLD_TILE_UPKEEP` →
 
 ## Recently reconciled
 
+- **2026-06-05** — Full content reconciliation of the §1 tables (wonders,
+  buildings, resources, promotions, terrain), entry-by-entry against
+  `game-data.md`. Wonders matched exactly. Drift corrected in `structures.json`:
+  Granary now requires Pottery (was unconstrained); Library cost 80→90 and gained
+  its documented +2 Culture; Market cost 100→150; Walls cost 60→50; Barracks's
+  undesigned `disciplined`-promotion + heal effect replaced with the spec's
+  `land_xp: 3`. Removed the undesigned `disciplined` promotion from
+  `promotions.json` (absent from §13, zero code refs). Corrected a prose typo in
+  `game-data.md` §10.3 (Pig improvement Farm→Pasture, matching the engine and the
+  other pasture animals). Remaining differences are deliberate model choices, now
+  catalogued under §1. Full suite green (unit + integration playthrough).
 - **2026-06-05** — Most civic `effects` are now applied (§2). Added
   `sim/policy_effects.gd` as the single reader and wired the headline gameplay
   bonuses into `TurnEngine` and `SimFacade`; `tests/sim/test_policy_effects.gd`

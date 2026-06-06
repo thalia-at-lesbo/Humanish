@@ -3,7 +3,7 @@
     "id": "granary",
     "cost": 60,
     "upkeep": 1,
-    "tech_required": null,
+    "tech_required": "pottery",
     "output_delta": { "food": 2, "production": 0, "commerce": 0 },
     "growth_bonus": 50,
     "health_bonus": 1,
@@ -16,20 +16,21 @@
     "upkeep": 1,
     "tech_required": null,
     "output_delta": { "food": 0, "production": 0, "commerce": 0 },
-    "effects": { "free_promotions": ["disciplined"], "heals_units": true }
+    "effects": { "land_xp": 3 }
   },
   "library": {
     "id": "library",
-    "cost": 80,
+    "cost": 90,
     "upkeep": 1,
     "tech_required": "writing",
     "output_delta": { "food": 0, "production": 0, "commerce": 0 },
     "science_bonus": 25,
+    "culture_bonus": 2,
     "specialist_slots": { "scientist": 2 }
   },
   "market": {
     "id": "market",
-    "cost": 100,
+    "cost": 150,
     "upkeep": 1,
     "tech_required": "currency",
     "output_delta": { "food": 0, "production": 0, "commerce": 0 },
@@ -39,7 +40,7 @@
   },
   "walls": {
     "id": "walls",
-    "cost": 60,
+    "cost": 50,
     "upkeep": 1,
     "tech_required": null,
     "output_delta": { "food": 0, "production": 0, "commerce": 0 },

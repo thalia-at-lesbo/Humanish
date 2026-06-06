@@ -777,7 +777,7 @@ Provide +1 Health city-wide when connected. All also provide additional Food yie
 | Crab | Fishing Boats | Coast | +1 Food +1 Production |
 | Deer | Camp | Forest/Tundra | +1 Food +1 Production |
 | Fish | Fishing Boats | Ocean/Coast | +2 Food |
-| Pig | Farm | Plains/Grassland | +1 Food +1 Production |
+| Pig | Pasture | Plains/Grassland | +1 Food +1 Production |
 | Rice | Farm | Plains/Flood Plains | +2 Food |
 | Sheep | Pasture | Plains/Grassland/Hills | +1 Food +1 Commerce |
 | Wheat | Farm | Plains/Flood Plains | +2 Food |
