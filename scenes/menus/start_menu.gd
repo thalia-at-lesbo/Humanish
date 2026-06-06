@@ -58,6 +58,11 @@ func _build_ui() -> void:
 	load_game_btn.connect("pressed", self, "_on_load_game_pressed")
 	_menu_box.add_child(load_game_btn)
 
+	var multiplayer_btn := Button.new()
+	multiplayer_btn.text = "Multiplayer"
+	multiplayer_btn.connect("pressed", self, "_on_multiplayer_pressed")
+	_menu_box.add_child(multiplayer_btn)
+
 	var about_btn := Button.new()
 	about_btn.text = "About"
 	about_btn.connect("pressed", self, "_on_about_pressed")
@@ -81,6 +86,28 @@ func _on_new_game_pressed() -> void:
 	_setup_screen.anchor_bottom = 1.0
 	add_child(_setup_screen)
 	_setup_screen.init(_db, funcref(self, "_on_setup_complete"))
+
+func _on_multiplayer_pressed() -> void:
+	_menu_box.visible = false
+	var mp = load("res://scenes/net/multiplayer_setup.gd").new()
+	mp.anchor_right = 1.0
+	mp.anchor_bottom = 1.0
+	add_child(mp)
+	mp.init(_db, funcref(self, "_on_multiplayer_connected"))
+
+# A remote game is ready: reparent the live NetClient into the main scene (so it
+# keeps polling after this menu frees) and hand the server-built facade to
+# main.tscn, exactly like the New Game / Load Game paths.
+func _on_multiplayer_connected(facade, db, net_client) -> void:
+	var main_scene = load("res://scenes/main.tscn").instance()
+	main_scene.init_with_facade(facade, db)
+	main_scene.set_net_client(net_client)
+	get_tree().get_root().add_child(main_scene)
+	get_tree().current_scene = main_scene
+	if net_client.get_parent() != null:
+		net_client.get_parent().remove_child(net_client)
+	main_scene.add_child(net_client)
+	queue_free()
 
 func _on_load_game_pressed() -> void:
 	_menu_box.visible = false

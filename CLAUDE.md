@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Unit suites only — note tests/integration is excluded by listing the unit dirs
 godot3 --no-window -s addons/gut/gut_cmdln.gd \
-  -gdir=res://tests/core,res://tests/world,res://tests/sim,res://tests/api,res://tests/scenes \
+  -gdir=res://tests/core,res://tests/world,res://tests/sim,res://tests/api,res://tests/scenes,res://tests/net \
   -ginclude_subdirs -gexit
 
 # Integration playthrough only (the final gate)
@@ -21,11 +21,17 @@ godot3 --no-window -s addons/gut/gut_cmdln.gd -gtest=res://tests/sim/test_combat
 
 # Run a single test by name within a file
 godot3 --no-window -s addons/gut/gut_cmdln.gd -gtest=res://tests/sim/test_combat.gd -gunit_test_name=test_combat_same_seed_identical_outcome -gexit
+
+# Launch the headless multiplayer server (see docs/design/network-design.md)
+./run_server.sh --players=3 --ai=1 --port=9080   # override engine with GODOT=…
+
+# Manual (non-CI) end-to-end multiplayer loopback smoke test
+godot3 --no-window -s res://tests/manual/loopback_smoke.gd   # prints "SMOKE: PASS"
 ```
 
 > Heads-up: `-gdir=res://tests -ginclude_subdirs` would recurse into **all** of `tests/`, including `tests/integration`. To keep the unit run separate from the final integration gate, run them as two phases (use `./run_tests.sh`, which encodes the ordering and is mirrored by `.github/workflows/build.yml`).
 
-The test framework is **GUT 7.4.3** (Godot 3.x). Test suites are organised by functional area, mirroring the source layout: `tests/core/`, `tests/world/`, `tests/sim/`, `tests/api/`, `tests/scenes/` — one file per module/subsystem (e.g. `combat.gd` → `tests/sim/test_combat.gd`). New tests go in the file for the subsystem they exercise; a brand-new subsystem gets a new `test_<name>.gd` under the matching layer. `tests/integration/` holds end-to-end **playthrough** suites that drive a whole game through `SimFacade` (most interaction families in one scenario); they run as the final gate **after** the unit suites, never mixed into them.
+The test framework is **GUT 7.4.3** (Godot 3.x). Test suites are organised by functional area, mirroring the source layout: `tests/core/`, `tests/world/`, `tests/sim/`, `tests/api/`, `tests/scenes/`, `tests/net/` — one file per module/subsystem (e.g. `combat.gd` → `tests/sim/test_combat.gd`). New tests go in the file for the subsystem they exercise; a brand-new subsystem gets a new `test_<name>.gd` under the matching layer. `tests/integration/` holds end-to-end **playthrough** suites that drive a whole game through `SimFacade` (most interaction families in one scenario); they run as the final gate **after** the unit suites, never mixed into them.
 
 Most suites extend the shared fixture `"res://tests/support/sim_fixture.gd"` (which itself extends GUT's `test.gd`) for the common scaffolding — `make_db()`, `make_gs(num_players, seed)`, `make_unit/make_warrior/make_settlement/make_gp`, `bare_facade(gs)`, `setup_facade(...)`, `hooks()`, `run_turns(...)`. Pure-math/data suites with no game state (e.g. `test_fixed`, `test_slider_math`) extend `"res://addons/gut/test.gd"` directly. The fixture file is **not** collected as a suite — GUT only picks up files named `test_*`. Each `test_*` method is one test case.
 
@@ -85,10 +91,25 @@ The in-game HUD (`scenes/hud/`) stacks an **advisor menu bar** (`menu_bar.gd`, a
 | `PlayerAI` | Simple deterministic computer player; a facade *client* (like the UI) that drives a flagged player's whole turn via `apply_command`. Pure static; lives in `src/api/`. |
 | `DebugConsole` | Advanced-debugging command engine (`src/api/`); a facade *client* (like `PlayerAI`) that inspects and modifies game values. Shared by the terminal reader and the `~` overlay. Debug-build-only. |
 | `DebugLog` | Pure capped ring buffer of debug log lines (`src/core/`) with a stdout mirror; fed by mirrored `SimFacade` signals. Debug-build-only. |
+| `NetProtocol` | Pure remote-multiplayer wire format (`src/net/`): message-type constants + `encode`/`decode` of `{v, t, d}` JSON frames. No sockets. |
+| `NetConfig` | Pure parser (`src/net/`) for the headless server's command-line switches (`--server`/`--port`/`--players`/`--ai`/`--load`/…) into a config dict. |
+| `net_server.gd` | Authoritative WebSocket server (`scenes/net/`, a facade *client*): the round-robin turn loop that plays AI slots, pushes state to the active remote human, and runs the end-of-turn pipeline on `submit`. |
+| `net_client.gd` | Remote-multiplayer client (`scenes/net/`, a `Node` facade *client*): WebSocket transport + in-game glue; re-syncs the facade on each `state` and ships a `submit` at end of turn. |
 
 ### Computer players (`PlayerAI`)
 
 `Player.is_ai` marks a player as computer-controlled (serialized; default `false`; set from each player config's `is_ai` in `SimFacade.setup()`, toggled per-player by the `SetupScreen` row checkboxes). `PlayerAI` (`src/api/player_ai.gd`) is **not** part of `sim/` — it is a *client* of `SimFacade`, exactly like the human UI: it only mutates state through `apply_command`, and it draws every random choice from the shared `gs.rng` (never its own generator), so an AI turn is reproducible and is captured by save/load. `PlayerAI.take_turn(facade, player_id)` runs the whole turn then ends it; the decision logic is deliberately simple — cheapest researchable tech, latest-unlocked policy per civic category, each city's queue refilled with every buildable unit/structure cheapest-first (replanned only when empty), and ~50% of units garrisoning their nearest city while the rest wander and pick random actions. In the scene layer, `HotseatManager` watches `player_turn_started` and `call_deferred`s `PlayerAI.take_turn` for `is_ai` players, chaining through consecutive AI players until a human's turn opens the pass-device screen. Like any new `class_name`, `PlayerAI` is registered in `project.godot`'s `_global_script_classes`.
+
+### Remote multiplayer (`src/net/`, `scenes/net/`)
+
+A simple asynchronous **client–server** layer for playing over the internet — **full-state handoff, round robin** (simultaneous turns are planned, not built). Like `PlayerAI` and the UI, every networking object is a *client* of `SimFacade`: it only reads `get_state()` or mutates through `apply_command()`/`load_save()`/`save()`, so **nothing in `sim/`/`world/` references it** and the wall holds. Transport is Godot 3's built-in **WebSocket** (`WebSocketServer`/`WebSocketClient`) — TCP on one port, chosen because it is transparent across the internet (clients connect outbound; no NAT/UDP/firewall setup beyond the server's one reachable port). Frame buffers are widened (`set_buffers`) because a whole serialized `GameState` exceeds the WebSocket default.
+
+The authoritative game lives on the **server** (the engine run windowless): it holds the one `SimFacade`, plays any AI slots itself, and relays turns. At the start of a remote player's turn the server pushes the whole serialized state (`state` message); the client plays its moves locally, then on End Turn pushes its post-move snapshot back (`submit`); the server adopts it (`load_save`) and runs the authoritative end-of-turn pipeline (`apply_command(end_turn)` → `player_step`/`world_step`/AI turns). The round-robin `_drive()` loop in `net_server.gd` is the single place turn *policy* lives — the documented seam for future simultaneous turns.
+
+* **Server mode is launched from the command line**, never the menu: `./run_server.sh [flags]` wraps `godot3 --no-window -s res://scenes/net/server_runner.gd -- --server …`. `server_runner.gd` (`extends SceneTree`) builds `DataDB`+`SimFacade` from `NetConfig`, stands up `net_server.gd`, and polls the socket each `idle_frame` (no scene/menu loaded). Flags (`--port`, `--players`, `--ai`, `--load`, `--world`, `--map`, …) are parsed by `NetConfig`.
+* **Client mode is a new "Multiplayer" button on the start menu** → `scenes/net/multiplayer_setup.gd` (host/port/name → Connect). On the first `state` snapshot the `NetClient` builds a facade, installs itself as the facade's remote-submit handler, and hands the facade to `main.tscn` via the same `init_with_facade` path as New Game / Load (the live `NetClient` Node is reparented into the main scene so it keeps polling).
+* **The only engine seam** is on `SimFacade`: `set_remote_submit_handler(funcref)` marks the facade a remote client and intercepts End Turn (the `END_TURN` command and the `DO_CONTROL` END_TURN/FORCE_END_TURN hotkey path) — instead of running the local pipeline it ships the snapshot and parks the turn via `set_remote_waiting(true)` (the End Turn button then reads "Waiting…"). The seam is presentation-only wiring and **not serialized**.
+* **Adding a network message**: add a type constant to `NetProtocol`, a `case` to the server's `_handle_frame` and/or the client's `_handle_frame`, and a test to `tests/net/test_net_protocol.gd`. The pure layers (`NetProtocol`, `NetConfig`) and the facade seam (`tests/api/test_sim_facade_remote.gd`) run in CI; the live socket path is covered by the manual `tests/manual/loopback_smoke.gd` harness (kept out of CI to avoid socket/yield flakiness). Like any `class_name`, `NetProtocol`/`NetConfig` are registered in `project.godot`. Full reference: `docs/design/network-design.md`.
 
 ### Advanced debugging (debug-build-only)
 
