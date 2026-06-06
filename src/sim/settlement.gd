@@ -77,6 +77,16 @@ var garrison_turns: int = 0
 # Defense value (from walls + culture)
 var defence_value: int = 0
 
+# Conquest (§4.8). `health` is the city's defensive integrity (siege HP): an
+# assault on the undefended city tile lowers it, and the city falls at 0. It
+# regenerates each owner turn up to its maximum (see TurnEngine.city_max_health).
+# `peak_population` is the largest size the city has ever reached — a size-1 city
+# that has never been bigger is auto-razed on capture. `revolt_turns` counts
+# down post-capture occupation, during which the city produces nothing.
+var health: int = -1            # -1 = "full"; normalised to max on first use
+var peak_population: int = 1
+var revolt_turns: int = 0
+
 func has_structure(struct_id: String) -> bool:
 	return struct_id in structures
 
@@ -109,7 +119,9 @@ func serialize() -> Dictionary:
 		"special_persons_produced": special_persons_produced,
 		"rush_anger_turns": rush_anger_turns,
 		"garrison_turns": garrison_turns,
-		"defence_value": defence_value
+		"defence_value": defence_value,
+		"health": health, "peak_population": peak_population,
+		"revolt_turns": revolt_turns
 	}
 
 static func deserialize(d: Dictionary):
@@ -146,4 +158,7 @@ static func deserialize(d: Dictionary):
 	s.rush_anger_turns = int(d.get("rush_anger_turns", 0))
 	s.garrison_turns = int(d.get("garrison_turns", 0))
 	s.defence_value = int(d.get("defence_value", 0))
+	s.health = int(d.get("health", -1))
+	s.peak_population = int(d.get("peak_population", s.population))
+	s.revolt_turns = int(d.get("revolt_turns", 0))
 	return s

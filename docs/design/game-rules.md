@@ -182,6 +182,41 @@ turn.
   distance. Ownership of a tile is awarded to whichever player has the greatest accumulated
   influence on it. This is how borders form, expand, and shift between players.
 
+### 4.8 Conquest, occupation, and razing
+> **⚠️ Incomplete — needs verification.** This subsection describes a first-pass conquest
+> model. Its specific numbers and formulas (siege-health maximum, regeneration rate, assault
+> damage, revolt duration, the auto-raze conditions) are provisional placeholders and have
+> **not** been checked against the actual Civ IV mechanics this project targets for parity.
+> Before relying on it, verify the rules and constants against Civ IV's real combat/city-
+> capture calculations (city defence/bombardment, occupation/resistance length, capture
+> population loss, building survival on capture, etc.) and update both this section and the
+> implementation (`SimFacade` conquest helpers, `TurnEngine.city_max_health`, and the
+> `city_*`/`revolt_*` keys in `data/constants.json`) accordingly.
+
+A settlement has a **siege health** value — its defensive integrity — with a maximum derived
+from a base value, its population, and its defensive structures (walls, castle, …). Health
+regenerates a fixed amount each owner turn, up to that maximum.
+
+* **Assault.** A settlement is taken through its tile. Any defending units must be defeated
+  first (normal combat, §5.4); defeating the last defender does **not** by itself put the
+  attacker inside the settlement. Once the tile is undefended, an attack on it instead
+  **assaults the settlement**, lowering its siege health by the attacker's effective combat
+  strength. The settlement **falls** when its health reaches zero, and the attacking stack
+  enters the tile only at that point.
+* **Raze or keep.** When a settlement falls, the attacker chooses to **raze** it (destroyed
+  and removed from the game) or **keep** it (ownership transfers to the attacker). Two cases
+  remove the choice: **barbarian/wild attackers always raze**, and a **size-one settlement
+  that has never been larger is razed automatically** (a settlement that once grew bigger and
+  later shrank back to size one may still be kept).
+* **Occupation (revolt).** A kept settlement enters a **revolt** lasting a base number of
+  turns plus half its population. While in revolt it produces **nothing** — no output/yields,
+  no culture, and therefore no border expansion or growth — until the revolt subsides. On
+  capture its production queue and specialists are cleared and its siege health is restored;
+  if the captured settlement held the loser's seat of government (the Palace, §6.1), the
+  Palace is removed, so the loser re-establishes a capital elsewhere on their next turn.
+* **Disband.** At any other time a player may voluntarily **disband** one of their own
+  settlements, which destroys it exactly as razing does.
+
 ---
 
 ## 5. Units

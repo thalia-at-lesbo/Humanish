@@ -1,0 +1,139 @@
+# Humanish — a turn-based 4X strategy game.
+# Copyright (C) 2026 thalia-at-lesbos
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version. See the LICENSE file for the full text and warranty
+# disclaimer.
+
+extends "res://tests/support/sim_fixture.gd"
+
+# City conquest (§4.8): assaulting an undefended enemy city lowers its siege HP;
+# at 0 the attacker keeps it (in revolt) or razes it, with barbarian / size-1
+# auto-raze rules. Players may also disband their own cities at any time.
+
+func _at_war(gs):
+	gs.alliances[0].at_war_with = [2]
+	gs.alliances[1].at_war_with = [1]
+
+func test_city_max_health_grows_with_size_and_walls() -> void:
+	var gs = make_gs(1)
+	var s = make_settlement(gs, 1, 5, 5, 1)
+	var base = TurnEngine.city_max_health(s, gs.db)
+	s.population = 5
+	assert_true(TurnEngine.city_max_health(s, gs.db) > base, "Bigger cities are tougher")
+	var with_pop = TurnEngine.city_max_health(s, gs.db)
+	s.structures.append("walls")
+	assert_true(TurnEngine.city_max_health(s, gs.db) > with_pop, "Walls raise siege HP")
+
+# ── Assault through the move command ──────────────────────────────────────────
+
+func test_assault_lowers_health_and_holds_while_hp_remains() -> void:
+	var gs = make_gs(2)
+	_at_war(gs)
+	var city = make_settlement(gs, 2, 5, 5, 3)   # defenderless enemy city
+	var atk = make_warrior(gs, 1, 5, 6)          # base_strength 10
+	var f = bare_facade(gs)
+	gs.current_player_id = 1
+
+	f.apply_command(Commands.move_stack(1, 5, 6, 5, 5))
+	assert_true(city.health > 0, "A single weak assault does not fell a healthy city")
+	assert_true(city.health < TurnEngine.city_max_health(city, gs.db), "…but it took damage")
+	assert_eq(city.owner_player_id, 2, "The city is not captured while it still has HP")
+	assert_eq([atk.x, atk.y], [5, 6], "The attacker does not enter a city that held")
+
+func test_assault_captures_city_when_health_hits_zero() -> void:
+	var gs = make_gs(2)
+	_at_war(gs)
+	var city = make_settlement(gs, 2, 5, 5, 4)
+	city.peak_population = 4
+	var atk = make_warrior(gs, 1, 5, 6)
+	atk.base_strength = 100                       # fells the city in one assault
+	var f = bare_facade(gs)
+	gs.current_player_id = 1
+
+	f.apply_command(Commands.move_stack(1, 5, 6, 5, 5))
+	assert_eq(city.owner_player_id, 1, "Felling the city captures it for the attacker")
+	assert_eq(city.revolt_turns, gs.db.get_constant("revolt_base_turns", 3) + 4 / 2,
+		"Kept cities revolt for the base turns plus half their size")
+	assert_eq([atk.x, atk.y], [5, 5], "The attacker advances into the captured city")
+
+# ── Fall outcomes (raze vs keep) ──────────────────────────────────────────────
+
+func test_capture_clears_palace_and_sets_revolt() -> void:
+	var gs = make_gs(2)
+	var city = make_settlement(gs, 2, 5, 5, 4)
+	city.peak_population = 4
+	city.structures.append("palace")
+	var f = bare_facade(gs)
+	f._capture_city(city, 1)
+	assert_eq(city.owner_player_id, 1, "Ownership transfers to the captor")
+	assert_false(city.has_structure("palace"), "The loser's Palace is stripped on capture")
+	assert_true(city.revolt_turns > 0, "The kept city is in revolt")
+	assert_eq(city.health, TurnEngine.city_max_health(city, gs.db), "HP is restored on capture")
+
+func test_barbarians_always_raze() -> void:
+	var gs = make_gs(2)
+	var city = make_settlement(gs, 2, 5, 5, 5)   # large, would normally be kept
+	city.peak_population = 5
+	var f = bare_facade(gs)
+	assert_eq(f._city_falls(city, -2), "razed", "A barbarian captor razes any city")
+	assert_eq(gs.get_settlement_at(5, 5), null, "…and the city is gone")
+
+func test_size_one_never_larger_is_auto_razed() -> void:
+	var gs = make_gs(2)
+	var city = make_settlement(gs, 2, 5, 5, 1)
+	city.peak_population = 1
+	var f = bare_facade(gs)
+	assert_eq(f._city_falls(city, 1), "razed",
+		"A size-1 city that was never larger is razed automatically")
+
+func test_size_one_previously_larger_can_be_kept() -> void:
+	var gs = make_gs(2)
+	var city = make_settlement(gs, 2, 5, 5, 1)
+	city.peak_population = 3                       # it used to be bigger
+	var f = bare_facade(gs)
+	assert_eq(f._city_falls(city, 1), "captured",
+		"A shrunken city (peak > 1) is kept, not auto-razed")
+
+# ── Voluntary disband (raze any time) ─────────────────────────────────────────
+
+func test_disband_razes_own_city() -> void:
+	var gs = make_gs(1)
+	gs.current_player_id = 1
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var f = bare_facade(gs)
+	assert_true(f.apply_command(Commands.disband_city(1, city.id)), "Disband accepted")
+	assert_eq(gs.get_settlement_at(5, 5), null, "Disbanding razes the city")
+
+func test_cannot_disband_someone_elses_city() -> void:
+	var gs = make_gs(2)
+	gs.current_player_id = 1
+	var city = make_settlement(gs, 2, 5, 5, 3)
+	var f = bare_facade(gs)
+	assert_false(f.apply_command(Commands.disband_city(1, city.id)),
+		"A player cannot disband a city they do not own")
+	assert_eq(gs.get_settlement_at(5, 5).id, city.id, "…and the city survives")
+
+# ── Revolt & HP regen through the turn pipeline ───────────────────────────────
+
+func test_revolt_city_produces_nothing_and_counts_down() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	city.revolt_turns = 2
+	city.output_commerce = 99
+	TurnEngine.settlement_step(gs, city, gs.get_player(1), hooks())
+	assert_eq(city.revolt_turns, 1, "Revolt counts down each owner turn")
+	assert_eq(city.output_commerce, 0, "A revolting city generates no output")
+	assert_true(city.in_disorder, "…and shows as in unrest")
+
+func test_city_health_regenerates_toward_max() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var maxh = TurnEngine.city_max_health(city, gs.db)
+	city.health = 1
+	TurnEngine._city_health_regen(gs, city)
+	assert_true(city.health > 1, "Siege HP recovers between assaults")
+	assert_true(city.health <= maxh, "…but never past the maximum")

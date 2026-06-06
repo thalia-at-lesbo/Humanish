@@ -20,6 +20,8 @@ signal turn_advanced(turn_number)
 signal game_won(alliance_id)
 signal unit_created(unit_id)
 signal settlement_founded(settlement_id)
+signal city_conquered(settlement_id, captor_player_id)   # kept (in revolt) — §4.8
+signal city_razed(settlement_id, by_player_id)           # destroyed — §4.8
 signal technology_completed(player_id, tech_id)
 signal combat_resolved(result_dict)
 signal player_turn_started(player_id)
@@ -264,6 +266,8 @@ func apply_command(cmd: Dictionary) -> bool:
 			return _cmd_set_tile_worked(cmd)
 		IDs.CommandType.SET_CITIZEN_AUTOMATION:
 			return _cmd_set_citizen_automation(cmd)
+		IDs.CommandType.DISBAND_CITY:
+			return _cmd_disband_city(cmd)
 		IDs.CommandType.ESPIONAGE_MISSION:
 			return _cmd_espionage_mission(cmd)
 		IDs.CommandType.LOAD_UNIT:
@@ -380,16 +384,36 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 		# first. Combat is resolved here; the attacker only advances onto the
 		# tile if it wins (handled in _apply_combat_result). Attacking ends the
 		# stack's movement for the turn.
+		var enemy_city: Settlement = _enemy_settlement_at(sx, sy, player_id)
 		var enemy: Unit = Stack.get_defender(
 			_gs.units, sx, sy, player_id, _gs)
 		if enemy != null:
+			# A defender on a city tile must be beaten before the city can be
+			# assaulted, and killing it does NOT walk the attacker into the city
+			# (the city is taken by the assault below, not by clearing defenders).
 			var result: Dictionary = Combat.resolve(lead, enemy, _gs, _gs.rng)
-			_apply_combat_result(lead, enemy, result)
+			_apply_combat_result(lead, enemy, result, enemy_city == null)
 			emit_signal("combat_resolved", result)
 			for u in moving_units:
 				u.movement_left = 0
 				u.has_moved = true
 			lead.has_attacked = true
+			break
+
+		# An undefended enemy city tile is assaulted (§4.8): the attack lowers the
+		# city's siege HP, and the city falls (razed or captured) at 0. The stack
+		# advances onto the tile only once the city has fallen.
+		if enemy_city != null:
+			var outcome: String = _assault_city(lead, enemy_city, player_id)
+			for u in moving_units:
+				u.movement_left = 0
+				u.has_moved = true
+			lead.has_attacked = true
+			if outcome != "held":
+				for u in moving_units:
+					u.x = sx; u.y = sy
+					u.stationary_turns = 0
+					u.entrenchment = 0
 			break
 
 		var step_cost: int = Pathfinding._move_cost(
@@ -443,6 +467,89 @@ func _stack_movers(fx: int, fy: int, player_id: int, unit_ids) -> Array:
 		out.append(mu)
 	return out
 
+# ── City conquest (§4.8) ──────────────────────────────────────────────────────
+
+# An enemy settlement on a tile the attacker is hostile to: a barbarian/wild city
+# (owner -2) or another player's city the attacker is at war with. null otherwise
+# — own cities, and foreign cities at peace, are not assaulted.
+func _enemy_settlement_at(x: int, y: int, attacker_pid: int) -> Settlement:
+	var s: Settlement = _gs.get_settlement_at(x, y)
+	if s == null or s.owner_player_id == attacker_pid:
+		return null
+	if s.owner_player_id == -2 or _gs.are_at_war(attacker_pid, s.owner_player_id):
+		return s
+	return null
+
+# One assault by `lead` on an undefended enemy `city`: lowers its siege HP by the
+# attacker's effective strength. Returns "held" while HP remains, else the fall
+# outcome ("razed"/"captured").
+func _assault_city(lead: Unit, city: Settlement, attacker_pid: int) -> String:
+	var maxh: int = TurnEngine.city_max_health(city, _db)
+	if city.health < 0 or city.health > maxh:
+		city.health = maxh
+	var tile: Tile = _gs.map.get_tile(city.x, city.y)
+	var ter: Dictionary = _db.get_terrain(tile.terrain_id)
+	var feat: Dictionary = _db.get_feature(tile.feature_id) if tile.feature_id != "" else {}
+	var dmg: int = lead.effective_strength(_db, true, ter, feat, "")
+	if dmg < 1:
+		dmg = 1
+	city.health -= dmg
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	if city.health > 0:
+		return "held"
+	return _city_falls(city, attacker_pid)
+
+# A city whose siege HP reached 0 falls. Barbarians always raze; a size-1 city
+# that was never larger is auto-razed; otherwise the captor keeps it (in revolt).
+func _city_falls(city: Settlement, captor_pid: int) -> String:
+	if captor_pid == -2 or (city.population <= 1 and city.peak_population <= 1):
+		_raze_city(city, captor_pid)
+		return "razed"
+	_capture_city(city, captor_pid)
+	return "captured"
+
+# Transfer a fallen city to its captor. It revolts for revolt_base_turns + half
+# its size (producing nothing meanwhile, §4.8); its HP is restored, its queue and
+# specialists are cleared, and the loser's Palace is stripped so they re-seed a
+# new capital next turn (§6.1).
+func _capture_city(city: Settlement, captor_pid: int) -> void:
+	city.owner_player_id = captor_pid
+	city.structures.erase("palace")
+	city.production_queue = []
+	city.production_store = 0
+	city.specialists = {}
+	city.worked_tiles = []
+	city.locked_tiles = []
+	city.revolt_turns = _db.get_constant("revolt_base_turns", 3) + city.population / 2
+	city.health = TurnEngine.city_max_health(city, _db)
+	city.in_disorder = true
+	_add_notification(city.name + " captured!", "major")
+	emit_signal("city_conquered", city.id, captor_pid)
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+
+# Destroy a city entirely (conquest raze, auto-raze, or a voluntary disband).
+func _raze_city(city: Settlement, by_pid: int) -> void:
+	var sid: int = city.id
+	_gs.settlements.erase(city)
+	if _selection != null and _selection.head_city() == sid:
+		_selection.clear()
+	_add_notification(city.name + " was razed.", "major")
+	emit_signal("city_razed", sid, by_pid)
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+
+# Voluntarily disband (raze) one of the player's own cities at any time (§4.8).
+func _cmd_disband_city(cmd: Dictionary) -> bool:
+	var s: Settlement = _gs.get_settlement(int(cmd.get("settlement_id", -1)))
+	var pid: int = int(cmd["player_id"])
+	if s == null or s.owner_player_id != pid:
+		return false
+	_raze_city(s, pid)
+	return true
+
 func _cmd_found_settlement(cmd: Dictionary) -> bool:
 	var player_id: int = int(cmd["player_id"])
 	var unit_id: int = int(cmd["unit_id"])
@@ -476,6 +583,7 @@ func _cmd_found_settlement(cmd: Dictionary) -> bool:
 	s.owner_player_id = player_id
 	s.x = u.x; s.y = u.y
 	s.population = 1
+	s.peak_population = 1
 	# Seed the capital with the Palace by default. Data-driven: only added when
 	# the structures table actually defines a "palace" entry.
 	if is_first_city and not _db.get_structure("palace").empty():

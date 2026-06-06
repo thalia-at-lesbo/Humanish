@@ -143,6 +143,18 @@ static func player_step(gs: GameState, player_id: int, hooks: Hooks) -> void:
 
 static func settlement_step(gs: GameState, s: Settlement,
 		player: Player, hooks: Hooks) -> void:
+	# A conquered city in revolt (§4.8) produces nothing — no growth, output,
+	# culture, borders, or specialists — until order is restored. It still heals
+	# its siege HP, and the occupation counter ticks down.
+	if s.revolt_turns > 0:
+		s.revolt_turns -= 1
+		s.output_food = 0
+		s.output_production = 0
+		s.output_commerce = 0
+		s.in_disorder = true
+		_city_health_regen(gs, s)
+		return
+
 	# Growth
 	if not hooks.run(IDs.Phase.SETTLEMENT_GROWTH, gs, {"settlement_id": s.id}):
 		_settlement_growth(gs, s, player)
@@ -166,6 +178,9 @@ static func settlement_step(gs: GameState, s: Settlement,
 	# Special-person progress
 	if not hooks.run(IDs.Phase.SETTLEMENT_SPECIALISTS, gs, {"settlement_id": s.id}):
 		_special_person_progress(gs, s)
+
+	# Siege HP recovers between assaults (§4.8).
+	_city_health_regen(gs, s)
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -264,6 +279,8 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 
 	if s.food_store >= threshold:
 		s.population += 1
+		if s.population > s.peak_population:
+			s.peak_population = s.population   # tracks the largest size ever (§4.8)
 		var carry_frac: int = 50  # carry 50% of threshold
 		if s.has_structure("granary"):
 			carry_frac = int(db.get_structure("granary").get("effects", {}).get("food_carry_over", 50))
@@ -723,6 +740,29 @@ static func _find_capital(gs: GameState, player_id: int) -> Settlement:
 # earliest-founded surviving city — so a player who still has cities is never
 # left capital-less. No-op when the capital is intact, when the player has no
 # cities, or when the data tables define no Palace.
+# A city's maximum siege health (§4.8): a base, plus a slice for its size, plus a
+# slice of its defensive structures' bonuses (walls, castle, …). Public so the
+# conquest code in SimFacade shares the exact formula.
+static func city_max_health(s: Settlement, db: DataDB) -> int:
+	var maxh: int = db.get_constant("city_base_health", 20)
+	maxh += s.population * db.get_constant("city_health_per_pop", 3)
+	var divisor: int = db.get_constant("city_defence_structure_divisor", 10)
+	if divisor > 0:
+		for struct_id in s.structures:
+			maxh += int(db.get_structure(struct_id).get("defence_bonus", 0)) / divisor
+	return maxh
+
+# Heal a city's siege HP toward its maximum (and normalise the -1 "full"
+# sentinel / any over-cap value left by a shrunk city).
+static func _city_health_regen(gs: GameState, s: Settlement) -> void:
+	var maxh: int = city_max_health(s, gs.db)
+	if s.health < 0 or s.health > maxh:
+		s.health = maxh
+		return
+	if s.health < maxh:
+		var regen: int = s.health + gs.db.get_constant("city_health_regen", 15)
+		s.health = maxh if regen > maxh else regen
+
 static func _ensure_capital_palace(gs: GameState, player_id: int) -> void:
 	if gs.db.get_structure("palace").empty():
 		return

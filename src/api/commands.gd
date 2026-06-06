@@ -263,6 +263,14 @@ static func set_citizen_automation(player_id: int, settlement_id: int,
 		"auto": auto
 	}
 
+static func disband_city(player_id: int, settlement_id: int) -> Dictionary:
+	# Voluntarily raze one of your own cities (§4.8).
+	return {
+		"type": IDs.CommandType.DISBAND_CITY,
+		"player_id": player_id,
+		"settlement_id": settlement_id
+	}
+
 static func espionage_mission(player_id: int, target_alliance_id: int,
 		mission: String) -> Dictionary:
 	# mission: "steal_tech" or "sabotage"

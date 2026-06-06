@@ -108,11 +108,24 @@ func _build_city_panel(city_id: int, gs) -> void:
 		prod_lbl.text = "Building: (none)"
 	add_child(prod_lbl)
 
+	# Show revolt status for a recently-conquered city (§4.8).
+	if s.revolt_turns > 0:
+		var revolt_lbl: Label = Label.new()
+		revolt_lbl.text = "In revolt: " + str(s.revolt_turns) + " turn(s)"
+		add_child(revolt_lbl)
+
 	# Open city screen button
 	var city_btn: Button = Button.new()
 	city_btn.text = "Open City"
 	city_btn.connect("pressed", self, "_on_open_city", [city_id])
 	add_child(city_btn)
+
+	# Disband (raze) — the at-any-time disband, and the "raze" choice for a
+	# just-conquered city (§4.8).
+	var disband_btn: Button = Button.new()
+	disband_btn.text = "Disband City"
+	disband_btn.connect("pressed", self, "_on_disband_city", [city_id])
+	add_child(disband_btn)
 
 # Terrain readout for an inspected (unoccupied / illegal-target) tile.
 func _build_tile_panel(tx: int, ty: int) -> void:
@@ -162,6 +175,10 @@ func _owned_units_on_tile(tx: int, ty: int, gs) -> Array:
 func _on_open_city(_city_id: int) -> void:
 	_facade.apply_command(Commands.do_control(
 		_facade.get_state().current_player_id, IDs.ControlType.OPEN_CITY_SCREEN))
+
+func _on_disband_city(city_id: int) -> void:
+	_facade.apply_command(Commands.disband_city(
+		_facade.get_state().current_player_id, city_id))
 
 func _clear_children() -> void:
 	# Remove from the tree immediately (queue_free alone is deferred, which can

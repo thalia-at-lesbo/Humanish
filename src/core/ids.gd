@@ -79,7 +79,9 @@ enum CommandType {
     # City citizen management (§11 city screen): manual worked-tile locks and the
     # per-city automate-citizens toggle.
     SET_TILE_WORKED = 45,
-    SET_CITIZEN_AUTOMATION = 46
+    SET_CITIZEN_AUTOMATION = 46,
+    # City conquest (§4.8): voluntarily disband/raze an owned city.
+    DISBAND_CITY = 47
 }
 
 # Win condition types
