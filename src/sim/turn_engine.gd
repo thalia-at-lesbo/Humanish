@@ -312,11 +312,13 @@ static func _update_wellbeing(gs: GameState, s: Settlement, player: Player, db: 
 	s.wellbeing_negative = neg
 	s.wellbeing_deficit = max(0, neg - pos)
 
-# A settlement has fresh water if its tile carries a river/oasis feature or any
-# neighbour is a water tile (§4.6).
+# A settlement has fresh water if its tile borders a river, carries an oasis, or
+# any neighbour is a water tile (§4.6).
 static func _has_fresh_water(gs: GameState, s: Settlement, db: DataDB) -> bool:
 	var tile: Tile = gs.map.get_tile(s.x, s.y)
-	if tile != null and (tile.feature_id == "river" or tile.feature_id == "oasis"):
+	if tile != null and tile.feature_id == "oasis":
+		return true
+	if gs.map.tile_has_river(s.x, s.y):
 		return true
 	for nb in gs.map.neighbours8(s.x, s.y):
 		if db.get_terrain(nb.terrain_id).get("domain", "land") != "land":

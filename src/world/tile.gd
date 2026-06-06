@@ -21,6 +21,13 @@ var resource_id: String = ""
 var improvement_id: String = ""
 var transport_id: String = ""
 
+# Rivers run *along tile borders*, not on the tile itself (§4.6). Each tile stores
+# only its north and west edges; a tile's south edge is the north edge of the tile
+# below it, and its east edge is the west edge of the tile to its right. So the
+# full set of river borders on the map is covered without double-counting.
+var river_n: bool = false   # river along this tile's northern border
+var river_w: bool = false   # river along this tile's western border
+
 # Cultural influence: player_id (int) -> accumulated influence (int)
 var influence: Dictionary = {}
 
@@ -51,6 +58,8 @@ func serialize() -> Dictionary:
 		"resource_id": resource_id,
 		"improvement_id": improvement_id,
 		"transport_id": transport_id,
+		"river_n": river_n,
+		"river_w": river_w,
 		"influence": influence.duplicate(),
 		"owner_player_id": owner_player_id,
 		"pollution": pollution,
@@ -65,6 +74,8 @@ static func deserialize(d: Dictionary):
 	t.resource_id = str(d.get("resource_id", ""))
 	t.improvement_id = str(d.get("improvement_id", ""))
 	t.transport_id = str(d.get("transport_id", ""))
+	t.river_n = bool(d.get("river_n", false))
+	t.river_w = bool(d.get("river_w", false))
 	var inf = d.get("influence", {})
 	for k in inf:
 		t.influence[int(k)] = int(inf[k])

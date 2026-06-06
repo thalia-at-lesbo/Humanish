@@ -90,6 +90,25 @@ func neighbours4(x: int, y: int) -> Array:
 			result.append(get_tile(nx, ny))
 	return result
 
+# ── Rivers ────────────────────────────────────────────────────────────────────
+
+# True if any of the tile's four borders carries a river. A tile's south edge is
+# the north edge of the tile below it; its east edge is the west edge of the tile
+# to its right (see Tile.river_n / Tile.river_w).
+func tile_has_river(x: int, y: int) -> bool:
+	var t: Tile = get_tile(x, y)
+	if t == null:
+		return false
+	if t.river_n or t.river_w:
+		return true
+	var south: Tile = get_tile(x, y + 1)
+	if south != null and south.river_n:
+		return true
+	var east: Tile = get_tile(x + 1, y)
+	if east != null and east.river_w:
+		return true
+	return false
+
 # ── Distance ──────────────────────────────────────────────────────────────────
 
 # Chebyshev (8-directional) distance between two tiles, accounting for wrapping.

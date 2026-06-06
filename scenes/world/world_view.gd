@@ -36,6 +36,8 @@ const DEFAULT_TERRAIN_COLOR: Color = Color(1.0, 0.0, 1.0)
 # Landforms that get a peak glyph drawn on top so they are recognisable as
 # raised terrain rather than a flat grey square that looks like an artifact.
 const PEAK_COLOR: Color = Color(0.30, 0.28, 0.26)
+# Rivers are drawn as bright water-blue lines along tile borders.
+const RIVER_COLOR: Color = Color(0.30, 0.55, 0.95)
 
 # Wild/raider forces (owner id -2) — a deliberate charcoal so they read as
 # hostile barbarians rather than rendering glitches.
@@ -126,6 +128,9 @@ func _draw() -> void:
 			# Fog: if fog layer active and tile is not visible, skip (FogLayer draws the overlay)
 			var tile_key: String = str(x) + "," + str(y)
 			var in_fog: bool = not visible_tiles.empty() and not visible_tiles.has(tile_key)
+			# A tile the active player has seen at least once is drawn with its
+			# remembered detail (territory, rivers); never-seen tiles are not.
+			var explored: bool = explored_tiles.empty() or explored_tiles.has(tile_key)
 
 			# Terrain base color
 			var terrain_id: String = tile.terrain_id if tile != null else ""
@@ -134,10 +139,19 @@ func _draw() -> void:
 				color = color.darkened(0.5)
 			draw_rect(rect, color)
 
+			# Cultural territory: a thin diagonal hatch in the owner's colour, so
+			# borders read at a glance without hiding the terrain underneath.
+			if explored and tile != null and tile.owner_player_id >= 0:
+				_draw_territory_hatch(rect, _player_color(tile.owner_player_id, gs), in_fog)
+
 			# Raised-terrain glyph: a peak so mountains/hills read as terrain
 			# (and never as a featureless grey "error" square). Dimmed in fog.
 			if terrain_id == "mountain" or terrain_id == "hills":
 				_draw_peak(rect, terrain_id == "mountain", in_fog)
+
+			# Rivers run along tile borders — the lines *between* tiles.
+			if explored and tile != null:
+				_draw_rivers(tile, rect, in_fog)
 
 			# Combat flash
 			if _flash_tiles.has(tile_key) and now < _flash_tiles[tile_key]:
@@ -243,6 +257,41 @@ func _draw_peak(rect: Rect2, tall: bool, in_fog: bool) -> void:
 			Vector2(cx2, ty2),
 			Vector2(cx2 + half * 0.7, by2),
 		]), col.darkened(0.1))
+
+# Draw a tile's river borders as lines between tiles. A tile only owns its north
+# and west edges (its south/east edges belong to the neighbours below/right), so
+# iterating every tile and drawing only those two edges paints every river
+# segment on the map exactly once.
+func _draw_rivers(tile, rect: Rect2, in_fog: bool) -> void:
+	var col: Color = RIVER_COLOR.darkened(0.5) if in_fog else RIVER_COLOR
+	var width: float = 3.0 * _zoom
+	if tile.river_n:
+		draw_line(rect.position, rect.position + Vector2(rect.size.x, 0), col, width)
+	if tile.river_w:
+		draw_line(rect.position, rect.position + Vector2(0, rect.size.y), col, width)
+
+# Fill a tile with a thin, widely-spaced diagonal hatch in the owner's colour to
+# mark cultural territory. The hatch phase is keyed to absolute screen position
+# (lines of constant x − y), so the strokes line up across neighbouring tiles
+# into continuous diagonals instead of breaking at every tile edge.
+func _draw_territory_hatch(rect: Rect2, owner_col: Color, in_fog: bool) -> void:
+	var col: Color = Color(owner_col.r, owner_col.g, owner_col.b, 0.30 if in_fog else 0.55)
+	var spacing: float = 14.0 * _zoom   # wide gaps between strokes
+	if spacing < 4.0:
+		spacing = 4.0
+	var line_w: float = 1.0
+	# Diagonals satisfy x - y = c; sweep c across the values that cross this rect.
+	var c_min: float = rect.position.x - rect.end.y
+	var c_max: float = rect.end.x - rect.position.y
+	var k: int = int(ceil(c_min / spacing))
+	while k * spacing <= c_max:
+		var c: float = k * spacing
+		# Clip the line x = c + y to the rect: y ranges over [top, bottom] ∩ where x ∈ [left, right].
+		var y1: float = max(rect.position.y, rect.position.x - c)
+		var y2: float = min(rect.end.y, rect.end.x - c)
+		if y2 > y1:
+			draw_line(Vector2(c + y1, y1), Vector2(c + y2, y2), col, line_w)
+		k += 1
 
 # A small circular badge in the tile's top-right corner showing how many units
 # share the tile, so the player knows there is a stack to click through.

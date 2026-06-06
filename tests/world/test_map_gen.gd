@@ -182,3 +182,63 @@ func test_start_positions_are_land_and_spread() -> void:
 			var ter = g.db.get_terrain(g.map.get_tile(int(s[0]), int(s[1])).terrain_id)
 			assert_eq(ter.get("domain", "land"), "land", "%s: start tile must be land" % mt)
 			assert_false(ter.get("impassable", false), "%s: start tile must be passable" % mt)
+
+# ── Rivers ──────────────────────────────────────────────────────────────────────
+
+# Count river border segments on a map (each tile contributes up to its north and
+# west edge — the canonical no-double-count representation, see Tile/WorldMap).
+func _river_segments(g) -> int:
+	var n = 0
+	for tile in g.map.all_tiles():
+		if tile.river_n:
+			n += 1
+		if tile.river_w:
+			n += 1
+	return n
+
+func test_rivers_are_generated_on_land_maps() -> void:
+	# Every standard map type should carve at least one river segment.
+	for mt in ["continents", "pangaea", "fractal", "lakes"]:
+		var g = _gen(mt, 1234)
+		assert_true(_river_segments(g) > 0, "%s: should carve some river segments" % mt)
+
+func test_rivers_are_seed_deterministic() -> void:
+	var a = _gen("continents", 4242)
+	var b = _gen("continents", 4242)
+	var at = a.map.all_tiles()
+	var bt = b.map.all_tiles()
+	var same = true
+	for i in range(at.size()):
+		if at[i].river_n != bt[i].river_n or at[i].river_w != bt[i].river_w:
+			same = false
+			break
+	assert_true(same, "The same seed must reproduce the same rivers")
+
+func test_tile_has_river_sees_neighbour_edges() -> void:
+	# A river on a tile's north/west border is also reported by the tile above/left
+	# (as that tile's south/east border), since edges are shared.
+	var g = _gen("continents", 99)
+	for tile in g.map.all_tiles():
+		if tile.river_n:
+			assert_true(g.map.tile_has_river(tile.x, tile.y),
+				"north-river tile reports a river")
+			if g.map.is_valid(tile.x, tile.y - 1):
+				assert_true(g.map.tile_has_river(tile.x, tile.y - 1),
+					"the tile above shares the same river border")
+			return
+	# No north river in this map is acceptable; the assertion above only runs if one exists.
+	assert_true(true, "no north river to check (acceptable)")
+
+func test_rivers_survive_save_load() -> void:
+	# Rivers are serialized on the tiles, so a roundtrip preserves every segment.
+	var g = _gen("continents", 7)
+	var before = _river_segments(g)
+	var json = JSON.print(g.map.serialize())
+	var restored = WorldMap.deserialize(JSON.parse(json).result)
+	var after = 0
+	for tile in restored.all_tiles():
+		if tile.river_n:
+			after += 1
+		if tile.river_w:
+			after += 1
+	assert_eq(after, before, "river segments must survive a save/load roundtrip")

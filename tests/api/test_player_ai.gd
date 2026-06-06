@@ -21,6 +21,28 @@ func ai_facade(gs):
 	f._hooks = hooks()
 	return f
 
+# ── Economy: research-heavy, but solvency-aware ────────────────────────────────
+
+func test_economy_pours_into_research_when_solvent() -> void:
+	var gs = make_gs(1)
+	var f = ai_facade(gs)
+	gs.current_player_id = 1
+	var p = gs.get_player(1)
+	p.treasury = 1000   # plenty of gold
+	PlayerAI.manage_economy(f, 1)
+	assert_eq(p.slider_research, 100, "A solvent AI puts everything into research")
+	assert_eq(p.slider_finance, 0, "…and nothing into finance")
+
+func test_economy_shifts_to_finance_when_broke() -> void:
+	var gs = make_gs(1)
+	var f = ai_facade(gs)
+	gs.current_player_id = 1
+	var p = gs.get_player(1)
+	p.treasury = 0   # thin reserve
+	PlayerAI.manage_economy(f, 1)
+	assert_true(p.slider_finance > 0, "A broke AI redirects the economy toward finance")
+	assert_eq(p.get_slider_sum(), 100, "Sliders still sum to 100")
+
 # ── Research: cheapest researchable tech ───────────────────────────────────────
 
 func test_research_picks_cheapest_available() -> void:

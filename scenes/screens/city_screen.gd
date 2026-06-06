@@ -15,6 +15,10 @@ extends Control
 # progress, a quick build chooser, and the building list.
 # Opened via OPEN_CITY_SCREEN (selection panel / flyout "Open City").
 
+# Emitted when the screen is closed, so a turn-start prompt chain can move on to
+# the next idle city (or finish).
+signal closed
+
 var _facade
 var _city_id: int = -1
 
@@ -255,6 +259,7 @@ func _on_build(itype: String, iid: String) -> void:
 
 func _on_close() -> void:
 	visible = false
+	emit_signal("closed")
 
 # ── Small UI helpers ───────────────────────────────────────────────────────────
 

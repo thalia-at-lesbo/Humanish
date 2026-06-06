@@ -219,6 +219,17 @@ func test_fresh_water_improves_wellbeing() -> void:
 	TurnEngine._update_wellbeing(gs, land_s, gs.get_player(1), gs.db)
 	assert_gt(land_s.wellbeing_positive, dry_pos, "Adjacent fresh water improves wellbeing")
 
+func test_river_border_gives_fresh_water() -> void:
+	var gs = make_gs(1)
+	var s = make_settlement(gs, 1, 2, 2, 3)  # dry, surrounded by grassland
+	TurnEngine._update_wellbeing(gs, s, gs.get_player(1), gs.db)
+	var dry_pos: int = s.wellbeing_positive
+	# A river running along the city tile's northern border is fresh water (§4.6),
+	# even with no adjacent water body.
+	gs.map.get_tile(2, 2).river_n = true
+	TurnEngine._update_wellbeing(gs, s, gs.get_player(1), gs.db)
+	assert_gt(s.wellbeing_positive, dry_pos, "A river border supplies fresh water")
+
 # ── Specialist output (§6.5) ─────────────────────────────────────────────────
 
 func test_specialists_add_commerce() -> void:

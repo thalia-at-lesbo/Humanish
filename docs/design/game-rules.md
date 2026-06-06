@@ -56,6 +56,27 @@ clamped so no output falls below zero
 Improvement output can increase over time and when enabling technologies are unlocked.
 Some water outputs require a specific unit action or technology before they are realized.
 
+### 1.4 Rivers
+Rivers are **borders between tiles**, not a feature painted on a tile. Each river is a
+connected chain of tile-edge segments that runs from an inland high point down to the sea.
+
+* **Storage.** A tile records only its **north** and **west** river edges; a tile's south
+  edge is the north edge of the tile below it, and its east edge is the west edge of the
+  tile to its right. This represents every border on the map exactly once (no
+  double-counting) and serializes with the tiles, so rivers survive save/load and are part
+  of the determinism gate. "Does this tile touch a river?" is the OR of its four borders.
+* **Generation.** River count scales with land area (a global tunable). Each river picks an
+  interior source tile (far from water, with a bias toward hills/mountains) and walks the
+  lattice of tile corners toward the coast, following a breadth-first distance-to-water
+  field with occasional meander, marking the border segment crossed at each step. The walk
+  uses the shared map RNG, so the river network is deterministic for the map seed.
+* **Effects.** A settlement whose tile touches a river has **fresh water** (§4.6), the same
+  as being adjacent to a water body or an oasis. (River commerce bonuses to adjacent tiles
+  and the river-crossing movement/attack penalties are described in the data spec and are
+  not yet wired into the rule code.)
+* **Presentation.** The renderer draws each river edge as a water-blue line *between* tiles,
+  on tiles the active player has explored.
+
 ---
 
 ## 2. Time, ages, and pacing
@@ -324,8 +345,22 @@ Outcomes and side effects:
 ### 6.2 Allocation sliders
 The player sets percentages across finance, research, culture, and intelligence,
 constrained to increments allowed by the governing policies and summing to a whole. Some
-policies cap the maximum research rate. The slider partitions each settlement's generic
-economic output.
+policies cap the maximum research rate (a minimum research share). The slider partitions
+each settlement's generic economic output.
+
+* **Starting allocation.** A new player begins at **100% research** (everything else at
+  0%), so the tech tree advances from turn one without the player having to touch the
+  sliders. With no finance income this draws the treasury down, so the player is expected
+  to dial finance back up once gold runs low.
+* **Computer players** manage this allocation automatically: they keep the slider
+  research-heavy while solvent and shift it toward finance when the treasury runs thin,
+  always within the policy-imposed increment and research-floor constraints. (This mirrors
+  the human starting default; without it the all-research start would slowly bankrupt the
+  AI, since 0% finance earns no gold.)
+  > **⚠️ Provisional — needs verification.** This computer-player allocation behaviour
+  > (and its solvency threshold) is a first-pass heuristic added alongside the 100%-research
+  > starting default; it has **not** been balance-tested across full games. Verify that it
+  > actually keeps the AI solvent without starving its research before relying on it.
 
 ### 6.3 Research
 * The research rate derives from net research output (optionally supplemented by net

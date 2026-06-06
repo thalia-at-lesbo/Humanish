@@ -34,12 +34,58 @@ static func take_turn(facade, player_id: int) -> void:
 	if player == null or player.is_eliminated:
 		return
 
+	manage_economy(facade, player_id)
 	manage_research(facade, player_id)
 	manage_civics(facade, player_id)
 	manage_production(facade, player_id)
 	manage_units(facade, player_id)
 
 	facade.apply_command(Commands.end_turn(player_id))
+
+# ── Economy: pour into research, but stay solvent ──────────────────────────────
+
+# Treasury below this (and not already in finance mode) makes the AI redirect the
+# economy toward finance until it recovers. New players default to 100% research
+# (zero finance income), so without this an AI would slowly bleed its reserve dry.
+const SOLVENCY_TREASURY: int = 40
+
+# Set the allocation sliders: research-heavy by default, finance-heavy when the
+# treasury runs thin. The split always respects the policy-imposed step and
+# minimum-research constraints so SimFacade accepts it.
+static func manage_economy(facade, player_id: int) -> void:
+	var gs = facade.get_state()
+	var player = gs.get_player(player_id)
+	if player == null:
+		return
+
+	# Mirror SimFacade._cmd_set_sliders: governing policies set an allowed increment
+	# and a research floor.
+	var increment: int = 0
+	var min_research: int = 0
+	var policies: Dictionary = gs.db.policies.get("policies", {})
+	for cat in player.policies:
+		var pol: Dictionary = policies.get(player.policies[cat], {})
+		increment = max(increment, int(pol.get("slider_increment", 0)))
+		min_research = max(min_research, int(pol.get("slider_min_research", 0)))
+	var step: int = increment if increment > 0 else 10
+
+	# Finance share: a solvency reserve when gold is low, otherwise nothing.
+	var finance: int = 50 if player.treasury < SOLVENCY_TREASURY else 0
+	finance = (finance / step) * step
+	var research: int = 100 - finance
+	# Honour the research floor by trimming finance if it would dip below it.
+	if research < min_research:
+		finance = ((100 - min_research) / step) * step
+		research = 100 - finance
+	if finance < 0:
+		finance = 0
+		research = 100
+
+	# No change needed if we are already there (avoids a redundant command/hash churn).
+	if player.slider_finance == finance and player.slider_research == research \
+			and player.slider_culture == 0 and player.slider_intel == 0:
+		return
+	facade.apply_command(Commands.set_sliders(player_id, finance, research, 0, 0))
 
 # ── Research: steer toward the cheapest researchable tech ──────────────────────
 

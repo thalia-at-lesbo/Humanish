@@ -23,6 +23,10 @@ const ERA_ORDER: Array = [
 	"industrial", "modern", "future"
 ]
 
+# Emitted whenever the chooser hides (a tech was picked or the player cancelled),
+# so a turn-start prompt chain can advance to the next thing that needs attention.
+signal closed
+
 var _facade
 var _depth_cache: Dictionary = {}
 
@@ -208,6 +212,8 @@ func _on_tech_selected(tech_id: String) -> void:
 	var gs = _facade.get_state()
 	_facade.apply_command(Commands.set_research(gs.current_player_id, tech_id))
 	visible = false
+	emit_signal("closed")
 
 func _on_close() -> void:
 	visible = false
+	emit_signal("closed")

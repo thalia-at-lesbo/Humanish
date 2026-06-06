@@ -19,6 +19,7 @@ var _db
 var _dbg_log   # DebugLog (advanced debugging; only active in interactive debug builds)
 var _extra_screens = {}   # ControlType -> simple read-only info screen node
 var _net_client = null     # NetClient (remote multiplayer); null in solo/hotseat play
+var _turn_prompts = null   # TurnPrompts node (start-of-turn chooser prompts)
 
 func init_with_facade(facade, db) -> void:
 	_facade = facade
@@ -85,6 +86,15 @@ func _ready() -> void:
 		# Stand up the simple read-only advisor/info screens (§3.1) programmatically
 		# so they need no .tscn nodes; each is keyed by the control that opens it.
 		_init_extra_screens(screens)
+		# Start-of-turn prompts (ask what to research / what to produce). Solo and
+		# hotseat only — remote turns are server-driven, not via player_turn_started.
+		if _net_client == null:
+			_turn_prompts = load("res://scenes/hud/turn_prompts.gd").new()
+			_turn_prompts.name = "TurnPrompts"
+			add_child(_turn_prompts)
+			_turn_prompts.init(_facade,
+				screens.get_node_or_null("TechChooser"),
+				screens.get_node_or_null("CityScreen"))
 
 	# Wire input router
 	var input_router = get_node_or_null("InputRouter")

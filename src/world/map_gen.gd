@@ -67,6 +67,9 @@ static func generate(map: WorldMap, db: DataDB, rng: RNG, map_type_id: String = 
 	var mask: Dictionary = _build_mask(map, rng, spec)
 	_paint(map, db, rng, mask, spec)
 	_add_coasts(map, db)
+	# Rivers run along tile borders and flow to the sea; added after coasts so the
+	# water-distance field they trace toward includes the freshly-cut coastline.
+	_add_rivers(map, db, rng)
 	if spec.has("new_world"):
 		_mark_new_world(map, db, rng, spec)
 
@@ -471,6 +474,171 @@ static func _add_coasts(map: WorldMap, db: DataDB) -> void:
 					break
 	for t in coastal:
 		t.terrain_id = "coast"
+
+# ── Rivers ───────────────────────────────────────────────────────────────────
+#
+# Rivers are drawn on the lattice of tile *corners* (integer positions 0..width,
+# 0..height) and stored as per-tile border flags (Tile.river_n / river_w). Each
+# river starts at an interior high point and walks corner-to-corner downhill to
+# the sea, where "downhill" is approximated by a multi-source breadth-first
+# distance-to-water field. Deterministic for the map's RNG, and serialized with
+# the tiles, so save/load and the determinism gate are unaffected.
+static func _add_rivers(map: WorldMap, db: DataDB, rng: RNG) -> void:
+	var w: int = map.width
+	var h: int = map.height
+	var water_dist: Array = _water_distance_field(map, db)
+
+	var land_count: int = 0
+	for t in map.all_tiles():
+		if db.get_terrain(t.terrain_id).get("domain", "land") == "land":
+			land_count += 1
+	if land_count == 0:
+		return
+
+	var per: int = int(db.get_constant("river_land_per_river", 90))
+	if per < 1:
+		per = 1
+	var count: int = land_count / per
+	if count < 1:
+		count = 1
+	var max_len: int = w + h   # generous cap; a river normally stops at the coast
+
+	for _i in range(count):
+		_trace_one_river(map, db, rng, water_dist, max_len)
+
+# Breadth-first distance (in tiles, 4-connected) from every water tile. Water
+# tiles are 0; land tiles get their hop-count to the nearest sea. Unreachable
+# tiles stay at a large sentinel.
+static func _water_distance_field(map: WorldMap, db: DataDB) -> Array:
+	var w: int = map.width
+	var h: int = map.height
+	var dist: Array = []
+	dist.resize(w * h)
+	var frontier: Array = []
+	for y in range(h):
+		for x in range(w):
+			var t: Tile = map.get_tile(x, y)
+			var is_water: bool = t != null and db.get_terrain(t.terrain_id).get("domain", "land") != "land"
+			if is_water:
+				dist[y * w + x] = 0
+				frontier.append([x, y])
+			else:
+				dist[y * w + x] = 1 << 20
+	var head: int = 0
+	while head < frontier.size():
+		var cell: Array = frontier[head]
+		head += 1
+		var cx: int = cell[0]
+		var cy: int = cell[1]
+		var d: int = dist[cy * w + cx] + 1
+		for delta in [[0, -1], [1, 0], [0, 1], [-1, 0]]:
+			var nx: int = cx + delta[0]
+			var ny: int = cy + delta[1]
+			if nx < 0 or nx >= w or ny < 0 or ny >= h:
+				continue
+			if d < dist[ny * w + nx]:
+				dist[ny * w + nx] = d
+				frontier.append([nx, ny])
+	return dist
+
+# Distance-to-water of a *corner*: the min over the up-to-four tiles touching it.
+static func _corner_water_dist(cx: int, cy: int, water_dist: Array, w: int, h: int) -> int:
+	var best: int = 1 << 20
+	for off in [[-1, -1], [0, -1], [-1, 0], [0, 0]]:
+		var tx: int = cx + off[0]
+		var ty: int = cy + off[1]
+		if tx < 0 or tx >= w or ty < 0 or ty >= h:
+			continue
+		var d: int = water_dist[ty * w + tx]
+		if d < best:
+			best = d
+	return best
+
+# Carve a single river: pick an inland source corner (preferring high, dry land)
+# and walk to the sea, marking the border segment crossed at each step.
+static func _trace_one_river(map: WorldMap, db: DataDB, rng: RNG, water_dist: Array, max_len: int) -> void:
+	var w: int = map.width
+	var h: int = map.height
+
+	# Source: best of a few random land tiles — far from water, bonus for relief.
+	var src_x: int = -1
+	var src_y: int = -1
+	var src_score: int = -1
+	for _k in range(12):
+		var rx: int = rng.randi_range(0, w - 1)
+		var ry: int = rng.randi_range(0, h - 1)
+		var t: Tile = map.get_tile(rx, ry)
+		if t == null or db.get_terrain(t.terrain_id).get("domain", "land") != "land":
+			continue
+		var wd: int = water_dist[ry * w + rx]
+		if wd <= 1:
+			continue   # already on the coast: no room for a river to run
+		var score: int = wd
+		if t.terrain_id == "mountain":
+			score += 3
+		elif t.terrain_id == "hills":
+			score += 2
+		if score > src_score:
+			src_score = score
+			src_x = rx
+			src_y = ry
+	if src_x < 0:
+		return
+
+	var cur: Array = [src_x, src_y]   # start at the source tile's top-left corner
+	var prev: Array = [-1, -1]
+	var visited: Dictionary = {}
+	for _step in range(max_len):
+		visited[str(cur[0]) + "," + str(cur[1])] = true
+		if _corner_water_dist(cur[0], cur[1], water_dist, w, h) == 0:
+			break   # reached the sea
+		# Candidate corner moves (4-connected on the corner lattice).
+		var best_n: Array = []
+		var best_d: int = 1 << 20
+		var meander: Array = []
+		for delta in [[0, -1], [1, 0], [0, 1], [-1, 0]]:
+			var nx: int = cur[0] + delta[0]
+			var ny: int = cur[1] + delta[1]
+			if nx < 0 or nx > w or ny < 0 or ny > h:
+				continue
+			if nx == prev[0] and ny == prev[1]:
+				continue
+			if visited.has(str(nx) + "," + str(ny)):
+				continue
+			var nd: int = _corner_water_dist(nx, ny, water_dist, w, h)
+			meander.append([nx, ny, nd])
+			if nd < best_d:
+				best_d = nd
+				best_n = [nx, ny]
+		if best_n.empty():
+			break   # boxed in; stop here
+		# Mostly flow toward the sea, but occasionally meander to a non-increasing
+		# neighbour so courses bend instead of running dead straight.
+		var nxt: Array = best_n
+		if meander.size() > 1 and rng.rand_bool_percent(30):
+			var opts: Array = []
+			for m in meander:
+				if int(m[2]) <= _corner_water_dist(cur[0], cur[1], water_dist, w, h):
+					opts.append([m[0], m[1]])
+			if not opts.empty():
+				nxt = opts[rng.randi_range(0, opts.size() - 1)]
+		_mark_river_segment(map, cur, nxt)
+		prev = cur
+		cur = nxt
+
+# Mark the border segment between two adjacent corners as a river. A horizontal
+# segment is a tile's north edge; a vertical segment is a tile's west edge.
+static func _mark_river_segment(map: WorldMap, a: Array, b: Array) -> void:
+	if a[1] == b[1]:                       # horizontal: a tile's north border
+		var cx: int = a[0] if a[0] < b[0] else b[0]
+		var t: Tile = map.get_tile(cx, a[1])
+		if t != null:
+			t.river_n = true
+	elif a[0] == b[0]:                     # vertical: a tile's west border
+		var cy: int = a[1] if a[1] < b[1] else b[1]
+		var t2: Tile = map.get_tile(a[0], cy)
+		if t2 != null:
+			t2.river_w = true
 
 # Seed undiscovered exploration sites (§9) on the far side of a Terra map's New
 # World, so colonising it later pays off. Deterministic for the seed.

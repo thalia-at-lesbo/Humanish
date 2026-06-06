@@ -18,10 +18,13 @@ var traits: Array = []        # Array of trait IDs
 
 # Economy
 var treasury: int = 0
-var slider_finance: int = 40  # percentages, must sum to 100
-var slider_research: int = 40
-var slider_culture: int = 10
-var slider_intel: int = 10
+# Sliders are percentages and must sum to 100. A new player pours everything into
+# research by default so the tech tree advances from turn one without the player
+# having to touch the sliders.
+var slider_finance: int = 0
+var slider_research: int = 100
+var slider_culture: int = 0
+var slider_intel: int = 0
 
 # Policy selections per category
 var policies: Dictionary = {}  # category -> policy_id
@@ -129,10 +132,10 @@ static func deserialize(d: Dictionary):
 	p.leader_id = str(d.get("leader_id", ""))
 	p.traits = d.get("traits", []).duplicate()
 	p.treasury = int(d.get("treasury", 0))
-	p.slider_finance = int(d.get("slider_finance", 40))
-	p.slider_research = int(d.get("slider_research", 40))
-	p.slider_culture = int(d.get("slider_culture", 10))
-	p.slider_intel = int(d.get("slider_intel", 10))
+	p.slider_finance = int(d.get("slider_finance", 0))
+	p.slider_research = int(d.get("slider_research", 100))
+	p.slider_culture = int(d.get("slider_culture", 0))
+	p.slider_intel = int(d.get("slider_intel", 0))
 	p.policies = d.get("policies", {}).duplicate()
 	p.current_research_id = str(d.get("current_research_id", ""))
 	p.research_store = int(d.get("research_store", 0))
