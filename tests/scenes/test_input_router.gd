@@ -110,3 +110,89 @@ func test_auto_advance_can_be_disabled() -> void:
 	ir._maybe_auto_advance(gs)
 	assert_eq(facade.get_selection().head_unit(), a.id,
 		"With auto-advance off, selection does not move on its own")
+
+# ── Click priority: a selected unit treats other tiles as move destinations ───
+
+func test_selected_unit_moves_onto_friendly_unit_tile() -> void:
+	var facade = setup_facade(2020, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(3, 3).terrain_id = "grassland"
+	gs.map.get_tile(4, 3).terrain_id = "grassland"
+	var mover = make_unit(gs, "warrior", pid, 3, 3)
+	make_unit(gs, "scout", pid, 4, 3)   # a friendly unit sits on the destination
+	facade.select_unit(mover.id)
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_selection_click(4, 3, gs)
+	assert_eq([mover.x, mover.y], [4, 3],
+		"A selected unit moves onto a friendly-occupied tile, not selecting it")
+
+func test_selected_unit_moves_onto_friendly_city_tile() -> void:
+	var facade = setup_facade(2121, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(3, 3).terrain_id = "grassland"
+	gs.map.get_tile(4, 3).terrain_id = "grassland"
+	var mover = make_unit(gs, "warrior", pid, 3, 3)
+	make_settlement(gs, pid, 4, 3, 2)   # a friendly city on the destination
+	facade.select_unit(mover.id)
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_selection_click(4, 3, gs)
+	assert_eq([mover.x, mover.y], [4, 3],
+		"A selected unit garrisons a friendly city instead of selecting it")
+	assert_eq(facade.get_selection().head_city(), -1,
+		"…and the city is not selected by the move click")
+
+func test_clicking_selected_units_own_tile_cycles_stack() -> void:
+	var facade = setup_facade(2222, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var a = make_unit(gs, "warrior", pid, 3, 3)
+	var b = make_unit(gs, "scout", pid, 3, 3)
+	facade.select_unit(a.id)
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_selection_click(3, 3, gs)   # same tile as the selected unit
+	assert_eq(facade.get_selection().head_unit(), b.id,
+		"Clicking the selected unit's own tile cycles to the next stack member")
+
+func test_click_selects_friendly_unit_when_nothing_selected() -> void:
+	var facade = setup_facade(2323, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = make_unit(gs, "warrior", pid, 6, 6)
+	facade.clear_selection()
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_selection_click(6, 6, gs)
+	assert_eq(facade.get_selection().head_unit(), u.id,
+		"With nothing selected, clicking a friendly unit selects it")
+
+func test_click_selects_city_when_nothing_selected() -> void:
+	var facade = setup_facade(2424, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var c = make_settlement(gs, pid, 5, 5, 2)
+	facade.clear_selection()
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_selection_click(5, 5, gs)
+	assert_eq(facade.get_selection().head_city(), c.id,
+		"With nothing selected, clicking a friendly city selects it")
