@@ -64,9 +64,23 @@ func _on_player_turn_started(player_id: int) -> void:
 		if _world_view.has_method("center_on_player"):
 			_world_view.center_on_player(player_id)
 
-	# Show pass-device overlay
-	if _pass_screen != null and _pass_screen.has_method("show_for_player"):
+	# Show the pass-device overlay — but only in a true hotseat with two or more
+	# humans. With a single human (vs. AI opponents, or solo) there is no one to
+	# pass the device to, so the "Pass the device to <name>" prompt is just an
+	# extra click between every AI round; skip it and let the human play directly.
+	if _pass_screen != null and _pass_screen.has_method("show_for_player") \
+			and _human_player_count() > 1:
 		_pass_screen.show_for_player(player_name, player_id)
+
+# How many human (non-AI) players are in the game.
+func _human_player_count() -> int:
+	if _facade == null:
+		return 0
+	var n: int = 0
+	for p in _facade.get_state().players:
+		if not p.is_ai:
+			n += 1
+	return n
 
 func _run_ai_turn(player_id: int) -> void:
 	if _facade == null:
