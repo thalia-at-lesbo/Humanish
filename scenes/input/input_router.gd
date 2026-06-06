@@ -18,6 +18,11 @@ var _world_view
 var _hotkey_map
 var _tooltip_label: Label       # set by main after HUD is available
 
+# Auto-advance: once the active unit can no longer act (moved out of moves, or
+# put into a rest stance), automatically select the next idle unit so the player
+# flows through their army without re-clicking. On by default.
+var auto_advance: bool = true
+
 func init(facade, world_view) -> void:
 	_facade = facade
 	_world_view = world_view
@@ -75,6 +80,7 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			if u != null:
 				_facade.apply_command(
 					Commands.move_stack(gs.current_player_id, u.x, u.y, tx, ty))
+				_maybe_auto_advance(gs)
 
 	elif event.button_index == BUTTON_RIGHT:
 		_show_flyout_menu(tx, ty, event.position)
@@ -167,12 +173,31 @@ func _on_flyout_item(id: int, items: Array, tx: int, ty: int) -> void:
 			_facade.apply_command(Commands.found_settlement(pid, settler_id))
 	elif aid == IDs.UnitCmd.FORTIFY and uid >= 0:
 		_facade.apply_command(Commands.unit_fortify(pid, uid))
+		_maybe_auto_advance(gs)
 	elif aid == IDs.UnitCmd.WAKE and uid >= 0:
 		_facade.apply_command(Commands.mission_skip_turn(pid, uid))
+		_maybe_auto_advance(gs)
 	elif aid == IDs.ControlType.OPEN_CITY_SCREEN:
 		_facade.apply_command(Commands.do_control(pid, IDs.ControlType.OPEN_CITY_SCREEN))
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+# If the active unit can no longer act, hop to the next idle unit. Mirrors the
+# facade's own idle predicate (cycle_idle_units), so a unit that has moved or
+# entered a rest stance is considered done.
+func _maybe_auto_advance(gs) -> void:
+	if not auto_advance:
+		return
+	var head: int = _facade.get_selection().head_unit()
+	if head >= 0:
+		var u = gs.get_unit(head)
+		if u != null and _unit_can_still_act(u):
+			return   # still has moves and no rest stance — keep it selected
+	_facade.cycle_idle_units(false)
+
+func _unit_can_still_act(u) -> bool:
+	return not (u.has_moved or u.is_fortified or u.is_sentry \
+		or u.is_patrolling or u.is_healing)
 
 func _owned_units_at(tx: int, ty: int, gs) -> Array:
 	# All units the current player owns on this tile, in stable spawn order so the

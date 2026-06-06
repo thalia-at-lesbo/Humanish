@@ -59,3 +59,54 @@ func test_owned_units_at_ignores_enemy_units() -> void:
 	var ir = _router()
 	assert_eq(ir._owned_units_at(3, 3, gs), [mine.id],
 		"Only the current player's units are selectable on a shared tile")
+
+func test_auto_advance_selects_next_idle_unit() -> void:
+	var facade = setup_facade(1717, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var a = make_unit(gs, "warrior", pid, 4, 4)
+	var b = make_unit(gs, "scout", pid, 7, 7)
+	facade.select_unit(a.id)
+	a.has_moved = true   # a has finished acting
+
+	var ir = _router()
+	ir._facade = facade
+	ir._maybe_auto_advance(gs)
+	assert_eq(facade.get_selection().head_unit(), b.id,
+		"Once the active unit is done, selection advances to the next idle unit")
+
+func test_no_auto_advance_while_unit_can_still_act() -> void:
+	var facade = setup_facade(1818, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var a = make_unit(gs, "warrior", pid, 4, 4)
+	make_unit(gs, "scout", pid, 7, 7)
+	facade.select_unit(a.id)   # a is fresh and idle
+
+	var ir = _router()
+	ir._facade = facade
+	ir._maybe_auto_advance(gs)
+	assert_eq(facade.get_selection().head_unit(), a.id,
+		"A unit that can still act stays selected")
+
+func test_auto_advance_can_be_disabled() -> void:
+	var facade = setup_facade(1919, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var a = make_unit(gs, "warrior", pid, 4, 4)
+	make_unit(gs, "scout", pid, 7, 7)
+	facade.select_unit(a.id)
+	a.has_moved = true
+
+	var ir = _router()
+	ir._facade = facade
+	ir.auto_advance = false
+	ir._maybe_auto_advance(gs)
+	assert_eq(facade.get_selection().head_unit(), a.id,
+		"With auto-advance off, selection does not move on its own")
