@@ -121,6 +121,13 @@ func _ready() -> void:
 	# Remote multiplayer: refresh the view whenever the server pushes new state.
 	_wire_net_client(world_view)
 
+	# Kick off the opening turn. In solo/hotseat play this drives an AI opener so
+	# a game that starts on an AI slot does not hang (its first turn is never
+	# announced via player_turn_started). In remote play the server owns turn
+	# policy, so the client never drives turns locally.
+	if _net_client == null and hsm != null:
+		hsm.begin()
+
 # ── Remote multiplayer ─────────────────────────────────────────────────────────
 
 # In a remote game the server (not a local pipeline) drives turns: each STATE

@@ -26,6 +26,20 @@ func init(facade, world_view) -> void:
 func set_pass_screen(screen) -> void:
 	_pass_screen = screen
 
+# Drive the opening player's turn. player_turn_started only fires on a turn
+# *transition*, never for the very first player, so the opener is not announced.
+# If that opener is an AI, nothing would ever set it in motion and the game would
+# hang forever waiting on a player that never acts — so kick its turn off here.
+# A human opener needs nothing (main centers the map for them); the pass-device
+# overlay, if any, opens for the next human via _on_player_turn_started.
+func begin() -> void:
+	if _facade == null:
+		return
+	var gs = _facade.get_state()
+	var p = gs.get_player(gs.current_player_id)
+	if p != null and p.is_ai:
+		call_deferred("_run_ai_turn", gs.current_player_id)
+
 func _on_player_turn_started(player_id: int) -> void:
 	if _facade == null:
 		return
