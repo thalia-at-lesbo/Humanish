@@ -19,6 +19,12 @@ var _facade
 
 func init(facade) -> void:
 	_facade = facade
+	# Fill the screen and swallow input so this reads as a proper modal overlay
+	# (the opaque backdrop is drawn in rebuild()) rather than a handful of stray
+	# widgets floating over — and clicking through to — the live map.
+	anchor_right = 1.0
+	anchor_bottom = 1.0
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 	_ensure_dir()
 
@@ -32,9 +38,18 @@ func show_screen() -> void:
 	rebuild()
 
 func rebuild() -> void:
+	# Remove immediately (queue_free is deferred, which would leave the old
+	# widgets — and a missing backdrop — rendered for a frame).
 	for child in get_children():
-		child.queue_free()
-	yield(get_tree(), "idle_frame")
+		remove_child(child)
+		child.free()
+
+	# Opaque backdrop first so it sits behind the content and hides the map.
+	var bg: ColorRect = ColorRect.new()
+	bg.anchor_right = 1.0
+	bg.anchor_bottom = 1.0
+	bg.color = Color(0.10, 0.10, 0.13, 1.0)
+	add_child(bg)
 
 	var vbox: VBoxContainer = VBoxContainer.new()
 	vbox.anchor_right = 1.0
