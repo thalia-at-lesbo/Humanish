@@ -144,10 +144,15 @@ Key points:
   round robin: play AI slots, then park on the first connected remote human and
   push them the state. An unclaimed remote slot holds the game until its client
   connects.
-* **Bootstrap & re-sync.** On `hello` the server sends a `welcome` plus an
-  initial `state` (so even a waiting client can render the world), then drives.
-  A client that disconnects and reconnects with the same `player_id` is re-sent
-  the current state.
+* **Bootstrap & re-sync.** On `hello` the server sends a `welcome` and then a
+  full `state` snapshot to the joining client **regardless of whose turn it is**
+  — marked `active` only when it is in fact that client's turn. This is what lets
+  a client that joins on someone else's turn (a second human slot, or anyone
+  joining mid-game) build its facade and actually enter the game, parked in the
+  "waiting" state, instead of receiving only a `WAIT` frame and stalling in the
+  lobby. `_drive()` then handles the active player as usual. A client that
+  disconnects and reconnects with the same `player_id` is re-sent the current
+  state the same way.
 
 ### Trust model
 
@@ -289,13 +294,23 @@ run_server.sh         convenience launcher for the headless server
   (`tests/api/test_sim_facade_remote.gd`) run in the normal CI unit gate.
 * The **live socket path** is exercised by `tests/manual/loopback_smoke.gd`
   (run by hand): it spins up an in-process server (1 remote + 1 AI player),
-  connects one client, and submits turns, asserting the turn counter advances as
-  the server runs the pipeline. It is kept out of CI because real sockets and
-  frame-yields would make a headless gate flaky.
+  connects one client, submits turns asserting the turn counter advances as the
+  server runs the pipeline, and confirms the per-turn autosave file appears. It
+  is kept out of CI because real sockets and frame-yields would make a headless
+  gate flaky.
 
 ```bash
 godot3 --no-window -s res://tests/manual/loopback_smoke.gd   # prints "SMOKE: PASS"
 ```
+
+These socket/GUI paths are not covered by the CI gate, so two classes of bug
+slipped past it initially and were fixed against headless repros: the host
+status panel reading a freed config widget every refresh (the panel now caches
+the port/name into plain vars before the config form is freed), and a client
+joining on another player's turn never leaving the lobby (the server now sends
+every joiner a bootstrap snapshot — see *Bootstrap & re-sync* above). A small
+permanent multi-client harness under `tests/manual/` for the off-turn-join case
+is a worthwhile follow-up.
 
 ---
 
