@@ -16,6 +16,7 @@ const SAVE_DIR: String = "user://saves/"
 const QUICK_SAVE_NAME: String = "quicksave.sav"
 
 var _facade
+var _name_edit: LineEdit = null   # custom save filename field (rebuilt each show)
 
 func init(facade) -> void:
 	_facade = facade
@@ -64,7 +65,26 @@ func rebuild() -> void:
 	title.text = "Save / Load"
 	vbox.add_child(title)
 
-	# Save button
+	# Named-save row: type a filename and save under it (the ".sav" extension is
+	# added automatically). This is the explicit "save as" the screen previously
+	# lacked — before, the only options were the turn-stamped Quick Save and the F5
+	# quicksave slot, so there was no way to choose a save's name.
+	var save_row: HBoxContainer = HBoxContainer.new()
+	var save_lbl: Label = Label.new()
+	save_lbl.text = "File name:"
+	save_row.add_child(save_lbl)
+	_name_edit = LineEdit.new()
+	_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_name_edit.placeholder_text = _default_save_name()
+	_name_edit.connect("text_entered", self, "_on_save_named_text")
+	save_row.add_child(_name_edit)
+	var save_as_btn: Button = Button.new()
+	save_as_btn.text = "Save"
+	save_as_btn.connect("pressed", self, "_on_save_named")
+	save_row.add_child(save_as_btn)
+	vbox.add_child(save_row)
+
+	# Quick save (turn-stamped) button — kept as a one-click convenience.
 	var save_btn: Button = Button.new()
 	save_btn.text = "Quick Save"
 	save_btn.connect("pressed", self, "_on_save")
@@ -109,9 +129,46 @@ func quick_load() -> void:
 func _on_save() -> void:
 	if _facade == null:
 		return
-	var gs = _facade.get_state()
-	_write_save("turn" + str(gs.turn_number) + ".sav")
+	_write_save(_default_save_name() + ".sav")
 	rebuild()
+
+# A sensible default file name (current turn) shown as the field's placeholder and
+# used by Quick Save.
+func _default_save_name() -> String:
+	if _facade == null:
+		return "save"
+	var gs = _facade.get_state()
+	return "turn" + str(gs.turn_number) if gs != null else "save"
+
+# Save under the name typed in the field. Falls back to the default when blank.
+func _on_save_named() -> void:
+	if _facade == null or _name_edit == null:
+		return
+	var base: String = _sanitize_name(_name_edit.text)
+	if base == "":
+		base = _default_save_name()
+	_write_save(base + ".sav")
+	rebuild()
+
+# Pressing Enter in the field saves too.
+func _on_save_named_text(_text: String) -> void:
+	_on_save_named()
+
+# Reduce arbitrary user text to a safe bare file name: trim, drop any path parts
+# and a trailing ".sav", and keep only filename-friendly characters.
+func _sanitize_name(raw: String) -> String:
+	var s: String = raw.strip_edges().get_file()   # strip any directory components
+	if s.to_lower().ends_with(".sav"):
+		s = s.substr(0, s.length() - 4)
+	var out: String = ""
+	for i in range(s.length()):
+		var ch: String = s[i]
+		var lower: String = ch.to_lower()
+		var is_alpha: bool = lower >= "a" and lower <= "z"
+		var is_digit: bool = ch >= "0" and ch <= "9"
+		if is_alpha or is_digit or ch in "-_. ":
+			out += ch
+	return out.strip_edges()
 
 func _on_load(filename: String) -> void:
 	_load_file(filename)

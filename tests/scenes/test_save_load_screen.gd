@@ -55,6 +55,29 @@ func test_close_hides_screen() -> void:
 	sl._on_close()
 	assert_false(sl.visible, "Close hides the screen")
 
+func test_named_save_writes_chosen_filename() -> void:
+	var sl = _screen(setup_facade(96))
+	sl.show_screen()
+	sl._name_edit.text = "my campaign"
+	sl._on_save_named()
+	assert_true("my campaign.sav" in sl._list_saves(),
+		"Saving with a custom name writes <name>.sav")
+	# Cleanup so the temp user:// saves dir does not accrue across runs.
+	Directory.new().remove(sl.SAVE_DIR + "my campaign.sav")
+
+func test_named_save_sanitizes_and_defaults() -> void:
+	var sl = _screen(setup_facade(97))
+	# Strips a directory prefix and a trailing .sav, keeps friendly chars.
+	assert_eq(sl._sanitize_name("../danger/Game_1.sav"), "Game_1",
+		"Sanitizer drops path parts and the extension")
+	# Blank field falls back to the turn-stamped default.
+	sl.show_screen()
+	sl._name_edit.text = "   "
+	sl._on_save_named()
+	var def = sl._default_save_name() + ".sav"
+	assert_true(def in sl._list_saves(), "A blank name falls back to the default")
+	Directory.new().remove(sl.SAVE_DIR + def)
+
 func test_rebuild_is_synchronous_and_replaces_content() -> void:
 	# rebuild() must not leave stale children behind (it once deferred frees and
 	# yielded a frame, which flashed the old widgets / a missing backdrop).
