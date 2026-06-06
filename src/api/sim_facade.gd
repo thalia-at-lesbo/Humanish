@@ -461,6 +461,14 @@ func _cmd_found_settlement(cmd: Dictionary) -> bool:
 		if _gs.map.distance(u.x, u.y, existing.x, existing.y) < min_dist:
 			return false
 
+	# A player's first city is their capital (the earliest-founded settlement;
+	# see TurnEngine._find_capital). Decide this before appending the new one.
+	var is_first_city: bool = true
+	for existing in _gs.settlements:
+		if existing.owner_player_id == player_id:
+			is_first_city = false
+			break
+
 	# Found the settlement
 	var s := Settlement.new()
 	s.id = _gs.next_settlement_id()
@@ -468,6 +476,10 @@ func _cmd_found_settlement(cmd: Dictionary) -> bool:
 	s.owner_player_id = player_id
 	s.x = u.x; s.y = u.y
 	s.population = 1
+	# Seed the capital with the Palace by default. Data-driven: only added when
+	# the structures table actually defines a "palace" entry.
+	if is_first_city and not _db.get_structure("palace").empty():
+		s.structures.append("palace")
 	_gs.settlements.append(s)
 
 	# Initial cultural claim

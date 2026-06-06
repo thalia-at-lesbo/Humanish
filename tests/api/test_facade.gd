@@ -46,6 +46,50 @@ func test_found_settlement_too_close_fails() -> void:
 	assert_false(facade.apply_command(Commands.found_settlement(gs.players[0].id, uid2, "B")),
 		"Cannot found within min distance")
 
+func test_first_city_is_founded_with_a_palace() -> void:
+	var facade = setup_facade(101)
+	var gs = facade.get_state()
+	gs.current_player_id = gs.players[0].id
+	var uid: int = _settler(facade, gs.players[0].id, 5, 5)
+	facade.apply_command(Commands.found_settlement(gs.players[0].id, uid, "Capital"))
+	assert_true(gs.settlements[0].has_structure("palace"),
+		"A player's first city (its capital) is founded with the Palace")
+
+func test_only_the_first_city_gets_a_palace() -> void:
+	var facade = setup_facade(102)
+	var gs = facade.get_state()
+	gs.current_player_id = gs.players[0].id
+	var uid1: int = _settler(facade, gs.players[0].id, 5, 5)
+	facade.apply_command(Commands.found_settlement(gs.players[0].id, uid1, "Capital"))
+	# A second city, far enough away to clear the minimum-distance check.
+	var uid2: int = _settler(facade, gs.players[0].id, 20, 20)
+	facade.apply_command(Commands.found_settlement(gs.players[0].id, uid2, "Second"))
+	assert_eq(gs.settlements.size(), 2, "Both cities are founded")
+	assert_true(gs.get_settlement(gs.settlements[0].id).has_structure("palace"),
+		"The capital keeps its Palace")
+	assert_false(gs.get_settlement(gs.settlements[1].id).has_structure("palace"),
+		"A later city is not given a Palace")
+
+func test_each_players_first_city_gets_its_own_palace() -> void:
+	var facade = setup_facade(103, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50},
+		 {"name": "B", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var p0 = gs.players[0].id
+	var p1 = gs.players[1].id
+
+	gs.current_player_id = p0
+	var u0: int = _settler(facade, p0, 5, 5)
+	facade.apply_command(Commands.found_settlement(p0, u0, "ACity"))
+
+	gs.current_player_id = p1
+	var u1: int = _settler(facade, p1, 20, 20)
+	facade.apply_command(Commands.found_settlement(p1, u1, "BCity"))
+
+	for s in gs.settlements:
+		assert_true(s.has_structure("palace"),
+			"Every society's first city has its own Palace (" + s.name + ")")
+
 func test_found_city_action_offered_and_works() -> void:
 	var facade = setup_facade(31, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
