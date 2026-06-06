@@ -40,7 +40,7 @@ var _notifications: Array = []
 
 func setup(db: DataDB, seed_val: int, world_size_id: String, pace_id: String,
 		difficulty_id: String, player_configs: Array,
-		enabled_win_conditions: Array) -> void:
+		enabled_win_conditions: Array, map_type_id: String = "continents") -> void:
 	_db = db
 	_hooks = Hooks.new()
 	_dirty = load("res://src/api/dirty_flags.gd").new()
@@ -67,9 +67,9 @@ func setup(db: DataDB, seed_val: int, world_size_id: String, pace_id: String,
 		bool(ws.get("wrap_x", true)),
 		bool(ws.get("wrap_y", false))
 	)
-	# Populate the blank grid with a varied sample map. Uses gs.rng so the result
+	# Populate the blank grid with the chosen map script. Uses gs.rng so the result
 	# is deterministic for the seed and is captured by save/load (tiles serialize).
-	MapGen.generate(_gs.map, db, _gs.rng)
+	MapGen.generate(_gs.map, db, _gs.rng, map_type_id)
 
 	# Create players and alliances
 	var difficulty: Dictionary = db.get_difficulty(difficulty_id)
@@ -105,7 +105,7 @@ func setup(db: DataDB, seed_val: int, world_size_id: String, pace_id: String,
 	# Place each player's opening units (data-driven via cfg["starting_units"]).
 	# Players with no starting units (e.g. headless test configs) get none, so
 	# the engine stays generic and society→unit mapping lives in the caller.
-	_place_all_starting_units(player_configs)
+	_place_all_starting_units(player_configs, map_type_id)
 
 # Initialize only the non-serialized scaffolding (db, hooks, UI state) so a save
 # can be loaded into a fresh facade without running setup(). load_save() then
@@ -119,8 +119,8 @@ func init_for_load(db: DataDB) -> void:
 	_popup_queue = []
 	_notifications = []
 
-func _place_all_starting_units(player_configs: Array) -> void:
-	var starts: Array = MapGen.find_start_positions(_gs.map, _db, _gs.players.size())
+func _place_all_starting_units(player_configs: Array, map_type_id: String = "") -> void:
+	var starts: Array = MapGen.find_start_positions(_gs.map, _db, _gs.players.size(), map_type_id)
 	for i in range(_gs.players.size()):
 		if i >= player_configs.size() or i >= starts.size():
 			break

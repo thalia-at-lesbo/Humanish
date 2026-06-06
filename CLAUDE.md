@@ -39,7 +39,7 @@ The design enforces a hard boundary: **`sim` (pure rules) ↔ `api` facade ↔ `
 scenes/menus/start_menu.tscn   ← project.godot main_scene
         │  "New Game" pressed
         ▼
-scenes/setup/setup_screen.gd   (programmatic Control; collects players, world size, pace, difficulty, society)
+scenes/setup/setup_screen.gd   (programmatic Control; collects players, world size, map type, pace, difficulty, society)
         │  on_setup_complete callback(facade, db)
         ▼
 scenes/main.tscn               (wires WorldView, HUD, InputRouter, HotseatManager)
@@ -72,7 +72,8 @@ The in-game HUD (`scenes/hud/`) stacks an **advisor menu bar** (`menu_bar.gd`, a
 | `TurnEngine` | Implements §3 pipeline as static methods; calls into every other sim module. |
 | `GreatPeople` | §14 Great Person subsystem: type-aware birth, Golden Ages, the Great General from combat, and GP action dispatch (`perform_action`). Pure static; reads types/actions from `data/units.json`. |
 | `SimFacade` | Public API; validates commands, routes to `TurnEngine`, emits signals. |
-| `DataDB` | Loads/validates all JSON tables; provides typed getters including `get_societies()`. |
+| `DataDB` | Loads/validates all JSON tables; provides typed getters including `get_societies()` and `get_map_type()`. |
+| `MapGen` | Procedural map generator (`src/world/`, pure static): per-script land-mask `shape` + climate `paint`, driven by `data/map_types.json`. `generate(map, db, rng, map_type_id)` fills a blank `WorldMap`; `find_start_positions(...)` lays out spread-out starts (honouring per-script `start_bounds`). |
 | `Fixed` | All integer math helpers (scale, proportion, movement conversion). |
 | `RNG` | Seeded PCG32 wrapper; `get_state()`/`restore_state()` for save-resume. |
 | `Hooks` | FuncRef registry keyed on `IDs.Phase`; lets rules be overridden per-phase. |
@@ -80,7 +81,7 @@ The in-game HUD (`scenes/hud/`) stacks an **advisor menu bar** (`menu_bar.gd`, a
 | `Commands` | Static factories for all command Dictionaries; no logic, pure construction. |
 | `PolicyEffects` | §8 civic-effects reader: `sum_int`/`has_flag` aggregate a player's active policies' `effects` (both nested dicts and bare flags); plus `largest_city_ids`/`is_religious_structure` helpers. Pure static; the single reader of per-civic `effects`, called from `TurnEngine` and `SimFacade`. |
 | `StartMenu` | Entry-point scene; loads `DataDB`, routes to `SetupScreen` or quits. |
-| `SetupScreen` | Collects new-game parameters (players, society, per-player human/AI toggle, world size, pace, difficulty) and calls back with a ready `SimFacade`. |
+| `SetupScreen` | Collects new-game parameters (players, society, per-player human/AI toggle, world size, map type, pace, difficulty) and calls back with a ready `SimFacade`. |
 | `PlayerAI` | Simple deterministic computer player; a facade *client* (like the UI) that drives a flagged player's whole turn via `apply_command`. Pure static; lives in `src/api/`. |
 | `DebugConsole` | Advanced-debugging command engine (`src/api/`); a facade *client* (like `PlayerAI`) that inspects and modifies game values. Shared by the terminal reader and the `~` overlay. Debug-build-only. |
 | `DebugLog` | Pure capped ring buffer of debug log lines (`src/core/`) with a stdout mirror; fed by mirrored `SimFacade` signals. Debug-build-only. |
@@ -105,6 +106,7 @@ A developer debugging subsystem, **gated to interactive debug builds** — it is
 
 - **New unit/structure/tech/etc.**: add a JSON entry to the relevant file in `data/`. No code change required unless the entry introduces a mechanic not yet modelled.
 - **New society**: add an entry to the `"societies"` block in `data/leaders_traits.json` with `id`, `name`, `leader_id`, `leader_name`, `description`, `traits` (array of trait IDs), and `starting_gold`. It will appear automatically in the `SetupScreen` society picker.
+- **New map type / script**: add an entry to `data/map_types.json` with `id`, `name`, `category`, `description`, a land-mask `shape`, a `climate`, and the relevant tunables (`land_fraction`, `mountain_chance`/`hills_chance`, `forest_chance`/`jungle_chance`, plus shape params like `num_continents`, `main_size`, `plate_count`, `start_bounds`, `new_world`). It appears automatically in the `SetupScreen` map-type picker, and `MapGen` reads it directly. Reusing an existing `shape`+`climate` pair needs **no code**; a brand-new `shape` needs a builder in `MapGen._build_mask`/`_shape_bias`, and a brand-new `climate` a band in `MapGen._flat_terrain`.
 - **New trait**: add an entry to the `"traits"` block in `data/leaders_traits.json`. Wire its effects in the relevant sim module (e.g. `TurnEngine`, `Combat`, `GreatPeople`).
 - **New Great Person type (§14)**: add a `unit` entry to `data/units.json` with `"classification": "great_person"`, a `generated_by` (the specialist type that produces it, or `combat_xp` for the Great General), and an `actions` array. `GreatPeople` reads these directly — `gp_unit_for_type()` maps the specialist to the unit and `perform_action()` validates against the `actions` list, so no new command is needed. A brand-new action *verb* needs a handler added to `GreatPeople.perform_action()`; `build_<structure_id>` verbs are already handled generically. Magnitudes (gold, hammers, culture, GP/Golden-Age costs) live in `data/constants.json`.
 - **New civic / civic effect (§8)**: add a policy entry to `data/policies.json` (one of the five categories). The mechanical fields (`upkeep_modifier`, `slider_increment`, `slider_min_research`, `anger_modifier`, `transition_turns`) are read directly by `SimFacade`/`TurnEngine`. Headline gameplay bonuses go in the per-civic `effects` dictionary (or, for a lone flag, a bare top-level key) and are read through `PolicyEffects.sum_int`/`has_flag`; a *new* effect key needs wiring into the relevant sim site (e.g. `_update_contentment`, `_settlement_growth`, `_policy_production_delta`, `_update_treasury`, `_cmd_rush_production`). See `docs/planning/designgaps.md` §2 for the effects already wired and the few still blocked on unbuilt subsystems.

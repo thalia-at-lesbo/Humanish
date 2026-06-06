@@ -10,75 +10,452 @@
 
 class_name MapGen
 
-# Procedural sample-map generator.
+# Procedural multi-script map generator.
 #
 # Pure rules code: integer math only, no Node/scene references, and every random
 # draw comes from the shared GameState RNG so generation is fully deterministic
 # for a given seed (and survives save/load, since tiles are serialized in full).
 #
-# The output is intentionally simple but varied: a mostly-contiguous landmass
-# with ocean poles, scattered seas, latitude-based climate bands (snow/tundra →
-# grassland/plains → desert), sprinkled hills and mountains, and a coast ring
-# wherever ocean meets land. All terrain ids are data-driven (data/terrains.json).
+# A map type is selected by id from data/map_types.json. Generation is split into
+# two orthogonal axes that the data table mixes and matches:
+#
+#   • shape   — how the land/water *mask* is built (where the continents are).
+#   • climate — how each land tile is *painted* (which terrains/features appear).
+#
+# Most shapes drive a shared height-field pipeline: random noise → box-blur into
+# blobs → per-shape height bias → percentile threshold to the target land
+# fraction. A couple of shapes (tectonics, terra) add structure on top. The
+# painter then colours land by latitude/landform bands and sprinkles features.
+#
+# All terrain/feature ids are data-driven (data/terrains.json, data/features.json)
+# and all per-type tunables (land fraction, landform chances, …) live in
+# data/map_types.json. The structural shape constants below stay in code because
+# they define the *algorithm*, not the balance.
 
-# Percent chances / band thresholds — kept here as named constants so the shape
-# of the map is easy to retune without touching the algorithm.
-const POLE_OCEAN_ROWS: int = 2     # rows at each pole that are always ocean
-const SEA_CHANCE: int = 8          # % of inland tiles that become scattered sea
-const MOUNTAIN_CHANCE: int = 6     # % of land tiles that become mountain
-const HILLS_CHANCE: int = 18       # % of land tiles that become hills
-const COLD_LAT: int = 22           # latitude% below which climate is cold
-const WARM_LAT: int = 70           # latitude% above which climate is warm
+# Rows at each pole that are always deep ocean, regardless of shape.
+const POLE_OCEAN_ROWS: int = 2
 
-# Generate terrain into an already-initialised WorldMap.
-static func generate(map: WorldMap, db: DataDB, rng: RNG) -> void:
+# Climate band thresholds (latitude%, ~0 at the poles, ~100 at the equator).
+const COLD_LAT: int = 22           # below this: cold band (snow/tundra)
+const WARM_LAT: int = 70           # above this: warm band (desert/plains)
+
+# Number of box-blur passes is per-type ("smooth"); these bound the height field.
+const HEIGHT_MAX: int = 255
+
+# Per-shape height-bias amplitudes (added to the blurred noise before threshold).
+const PANGAEA_AMP: int = 170       # land peaks at the map centre
+const CONTINENT_AMP: int = 160     # land peaks mid-band, ocean in the channels
+const CONTINENT_VBIAS: int = 60    # gentle mid-latitude land preference
+const HEMI_AMP: int = 170          # two horizontal land bands
+const ARCH_BIAS: int = 60          # uniform downward push → fragmentation
+const MAIN_AMP: int = 200          # the main continent blob
+const ISLAND_BIAS: int = 70        # downward push outside the main blob
+const INLAND_SEA_AMP: int = 160    # land at the rim, sea at the centre
+const LAKES_BIAS: int = 90         # mostly land; lows become small lakes
+const TERRA_OLD_AMP: int = 190     # Old World blob
+const TERRA_NEW_AMP: int = 200     # New World blob (larger)
+
+# Generate terrain into an already-initialised WorldMap for the given map type.
+static func generate(map: WorldMap, db: DataDB, rng: RNG, map_type_id: String = "continents") -> void:
 	var w: int = map.width
 	var h: int = map.height
 	if w <= 0 or h <= 0:
 		return
 
+	var spec: Dictionary = _resolve_spec(db, rng, map_type_id)
+
+	var mask: Dictionary = _build_mask(map, rng, spec)
+	_paint(map, db, rng, mask, spec)
+	_add_coasts(map, db)
+	if spec.has("new_world"):
+		_mark_new_world(map, db, rng, spec)
+
+# Resolve the map-type spec, expanding a "shuffle" type into a concrete pick.
+static func _resolve_spec(db: DataDB, rng: RNG, map_type_id: String) -> Dictionary:
+	var spec: Dictionary = db.get_map_type(map_type_id)
+	if str(spec.get("shape", "")) == "shuffle":
+		var pool: Array = spec.get("shuffle_pool", ["continents"])
+		var pick: String = str(pool[rng.randi_range(0, pool.size() - 1)])
+		return db.get_map_type(pick)
+	return spec
+
+# ── Land/water mask ────────────────────────────────────────────────────────────
+
+# Build the land mask (and any forced landforms) for the spec's shape.
+# Returns { "land": Array<bool>, "mountain": Array<bool>|null, "hills": Array<bool>|null }.
+static func _build_mask(map: WorldMap, rng: RNG, spec: Dictionary) -> Dictionary:
+	var w: int = map.width
+	var h: int = map.height
+	var shape: String = str(spec.get("shape", "continents"))
+
+	if shape == "tectonics":
+		return _mask_tectonics(w, h, rng, spec)
+
+	var passes: int = int(spec.get("smooth", 3))
+	var hf: Array = _height_field(w, h, rng, passes)
+	_apply_bias(hf, w, h, shape, spec)
+
+	var land_fraction: int = int(spec.get("land_fraction", 45))
+	var land: Array = _threshold(hf, w, h, land_fraction)
+
+	if shape == "continents":
+		var third_chance: int = int(spec.get("third_chance", 0))
+		if third_chance > 0 and rng.rand_bool_percent(third_chance):
+			var bx: int = rng.randi_range(w / 8, w - 1 - w / 8)
+			var by: int = rng.randi_range(h / 3, h - 1 - h / 3)
+			_stamp_blob(land, w, h, bx, by, (w if w < h else h) / 8)
+	elif shape == "terra":
+		_carve_terra(land, w, h, spec)
+
+	return {"land": land, "mountain": null, "hills": null}
+
+# Fill a height field with blurred noise: random values smoothed into soft blobs.
+static func _height_field(w: int, h: int, rng: RNG, passes: int) -> Array:
+	var hf: Array = []
+	hf.resize(w * h)
+	for i in range(w * h):
+		hf[i] = rng.randi_range(0, HEIGHT_MAX)
+	for _p in range(passes):
+		hf = _box_blur(hf, w, h)
+	return hf
+
+# 3×3 average (wrapping on x, clamped on y) — one smoothing pass. No RNG draws.
+static func _box_blur(src: Array, w: int, h: int) -> Array:
+	var dst: Array = []
+	dst.resize(w * h)
 	for y in range(h):
-		# Distance to the nearest pole row (0 at the very edge, larger inland).
+		for x in range(w):
+			var total: int = 0
+			var count: int = 0
+			for dy in [-1, 0, 1]:
+				var ny: int = y + dy
+				if ny < 0 or ny >= h:
+					continue
+				for dx in [-1, 0, 1]:
+					var nx: int = ((x + dx) % w + w) % w
+					total += int(src[ny * w + nx])
+					count += 1
+			dst[y * w + x] = total / count
+	return dst
+
+# Add the per-shape height bias in place, so a later threshold carves the shape.
+static func _apply_bias(hf: Array, w: int, h: int, shape: String, spec: Dictionary) -> void:
+	for y in range(h):
+		for x in range(w):
+			hf[y * w + x] += _shape_bias(shape, x, y, w, h, spec)
+
+# Height bias for one tile, in roughly [-amp, +amp]. Positive = more likely land.
+static func _shape_bias(shape: String, x: int, y: int, w: int, h: int, spec: Dictionary) -> int:
+	# Normalised coordinates on a 0..1000 scale and distance from the centre.
+	var fx: int = x * 1000 / w
+	var fy: int = y * 1000 / h
+	var dcx: int = fx - 500 if fx >= 500 else 500 - fx
+	var dcy: int = fy - 500 if fy >= 500 else 500 - fy
+	var dmax: int = dcx if dcx >= dcy else dcy
+
+	if shape == "fractal":
+		return 0
+	if shape == "archipelago":
+		return -ARCH_BIAS
+	if shape == "lakes":
+		return LAKES_BIAS
+	if shape == "pangaea":
+		return PANGAEA_AMP - dmax * PANGAEA_AMP * 2 / 500
+	if shape == "inland_sea":
+		return -INLAND_SEA_AMP + dmax * INLAND_SEA_AMP * 2 / 500
+	if shape == "hemispheres":
+		# Two horizontal land bands centred at fy≈250 and fy≈750.
+		var d1: int = fy - 250 if fy >= 250 else 250 - fy
+		var d2: int = fy - 750 if fy >= 750 else 750 - fy
+		var dband: int = d1 if d1 <= d2 else d2
+		return HEMI_AMP - dband * HEMI_AMP * 2 / 250
+	if shape == "islands_plus_main":
+		var radius: int = int(spec.get("main_size", 320))
+		if radius <= 0:
+			radius = 1
+		if dmax < radius:
+			return MAIN_AMP * (radius - dmax) / radius
+		return -ISLAND_BIAS
+	if shape == "terra":
+		var old_b: int = _blob_bias(fx, fy, 280, 500, 300, TERRA_OLD_AMP)
+		var new_b: int = _blob_bias(fx, fy, 740, 500, 360, TERRA_NEW_AMP)
+		return old_b if old_b >= new_b else new_b
+	# Default: continents — land mid-band, ocean in the vertical channels.
+	var num: int = int(spec.get("num_continents", 2))
+	if num <= 0:
+		num = 1
+	var bandw: int = w / num
+	if bandw <= 0:
+		bandw = 1
+	var local: int = x % bandw
+	var edge: int = local if local <= bandw - local else bandw - local
+	var bias_x: int = (edge * 2 * 1000 / bandw - 500) * CONTINENT_AMP / 500
+	var vbias: int = CONTINENT_VBIAS - dcy * CONTINENT_VBIAS * 2 / 500
+	return bias_x + vbias
+
+# Radial blob bias: +amp at (cx,cy), falling to -amp at `radius` (normalised units).
+static func _blob_bias(fx: int, fy: int, cx: int, cy: int, radius: int, amp: int) -> int:
+	var dx: int = fx - cx if fx >= cx else cx - fx
+	var dy: int = fy - cy if fy >= cy else cy - fy
+	var d: int = dx if dx >= dy else dy
+	if radius <= 0:
+		radius = 1
+	return amp - d * amp * 2 / radius
+
+# Threshold the height field to a boolean land mask hitting the target land
+# fraction. Pole rows are forced to ocean and excluded from the percentile pool.
+static func _threshold(hf: Array, w: int, h: int, land_fraction: int) -> Array:
+	var vals: Array = []
+	for y in range(h):
+		if y < POLE_OCEAN_ROWS or y >= h - POLE_OCEAN_ROWS:
+			continue
+		for x in range(w):
+			vals.append(int(hf[y * w + x]))
+	var land: Array = []
+	land.resize(w * h)
+	for i in range(w * h):
+		land[i] = false
+	if vals.empty():
+		return land
+	vals.sort()
+	# Cut so that `land_fraction`% of the candidate tiles land above the cutoff.
+	var water_frac: int = 100 - land_fraction
+	var ci: int = vals.size() * water_frac / 100
+	if ci < 0:
+		ci = 0
+	if ci >= vals.size():
+		ci = vals.size() - 1
+	var cutoff: int = int(vals[ci])
+	for y in range(h):
+		if y < POLE_OCEAN_ROWS or y >= h - POLE_OCEAN_ROWS:
+			continue
+		for x in range(w):
+			if int(hf[y * w + x]) > cutoff:
+				land[y * w + x] = true
+	return land
+
+# Paint a filled land blob (radius r, Chebyshev) into the mask.
+static func _stamp_blob(land: Array, w: int, h: int, cx: int, cy: int, r: int) -> void:
+	for dy in range(-r, r + 1):
+		var y: int = cy + dy
+		if y < POLE_OCEAN_ROWS or y >= h - POLE_OCEAN_ROWS:
+			continue
+		for dx in range(-r, r + 1):
+			var x: int = ((cx + dx) % w + w) % w
+			land[y * w + x] = true
+
+# Force the Old/New World separation for the Terra script: a deep-ocean channel
+# down the middle and along the wrap seam, so the two worlds never touch.
+static func _carve_terra(land: Array, w: int, h: int, spec: Dictionary) -> void:
+	var channel_lo: int = w * 46 / 100
+	var channel_hi: int = w * 54 / 100
+	for y in range(h):
+		for x in range(w):
+			if (x >= channel_lo and x <= channel_hi) or x < 2 or x >= w - 2:
+				land[y * w + x] = false
+
+# ── Tectonics ───────────────────────────────────────────────────────────────────
+
+# Plate-based mask: scatter plate seeds, assign each tile to its nearest seed
+# (wrapping on x), mark seeds land/ocean, and raise mountains/hills where two
+# different plates meet — natural ranges along the collision boundaries.
+static func _mask_tectonics(w: int, h: int, rng: RNG, spec: Dictionary) -> Dictionary:
+	var count: int = int(spec.get("plate_count", 8))
+	if count < 2:
+		count = 2
+	var land_plate_pct: int = int(spec.get("land_plate_pct", 55))
+
+	var seeds: Array = []          # [x, y]
+	var seed_is_land: Array = []   # bool per seed
+	for _i in range(count):
+		seeds.append([rng.randi_range(0, w - 1), rng.randi_range(0, h - 1)])
+		seed_is_land.append(rng.rand_bool_percent(land_plate_pct))
+
+	var land: Array = []
+	var mountain: Array = []
+	var hills: Array = []
+	land.resize(w * h)
+	mountain.resize(w * h)
+	hills.resize(w * h)
+
+	var plate_of: Array = []
+	plate_of.resize(w * h)
+	for y in range(h):
+		for x in range(w):
+			var best: int = 0
+			var best_d: int = 1 << 30
+			var second_d: int = 1 << 30
+			for s in range(count):
+				var dx: int = abs(x - int(seeds[s][0]))
+				dx = dx if dx <= w - dx else w - dx
+				var dy: int = abs(y - int(seeds[s][1]))
+				var d: int = dx * dx + dy * dy
+				if d < best_d:
+					second_d = best_d
+					best_d = d
+					best = s
+				elif d < second_d:
+					second_d = d
+			var idx: int = y * w + x
+			plate_of[idx] = best
+			var is_pole: bool = y < POLE_OCEAN_ROWS or y >= h - POLE_OCEAN_ROWS
+			land[idx] = bool(seed_is_land[best]) and not is_pole
+			mountain[idx] = false
+			hills[idx] = false
+
+	# Boundary ridges: a land tile touching a different plate becomes mountain;
+	# its neighbours become hills (the range's foothills).
+	for y in range(h):
+		for x in range(w):
+			var idx2: int = y * w + x
+			if not bool(land[idx2]):
+				continue
+			var on_boundary: bool = false
+			for dy in [-1, 0, 1]:
+				var ny: int = y + dy
+				if ny < 0 or ny >= h:
+					continue
+				for dx in [-1, 0, 1]:
+					var nx: int = ((x + dx) % w + w) % w
+					var nidx: int = ny * w + nx
+					if bool(land[nidx]) and int(plate_of[nidx]) != int(plate_of[idx2]):
+						on_boundary = true
+			if on_boundary:
+				mountain[idx2] = true
+	for y in range(h):
+		for x in range(w):
+			var idx3: int = y * w + x
+			if not bool(land[idx3]) or bool(mountain[idx3]):
+				continue
+			for nb in [[0, -1], [1, 0], [0, 1], [-1, 0]]:
+				var nx2: int = ((x + nb[0]) % w + w) % w
+				var ny2: int = y + nb[1]
+				if ny2 < 0 or ny2 >= h:
+					continue
+				if bool(mountain[ny2 * w + nx2]):
+					hills[idx3] = true
+					break
+
+	return {"land": land, "mountain": mountain, "hills": hills}
+
+# ── Painting ─────────────────────────────────────────────────────────────────
+
+# Colour every tile: water → ocean, land → landform/climate terrain, then
+# sprinkle surface features.
+static func _paint(map: WorldMap, db: DataDB, rng: RNG, mask: Dictionary, spec: Dictionary) -> void:
+	var w: int = map.width
+	var h: int = map.height
+	var land: Array = mask["land"]
+	var forced_mtn = mask["mountain"]
+	var forced_hill = mask["hills"]
+	var climate: String = str(spec.get("climate", "latitude"))
+	var mtn_chance: int = int(spec.get("mountain_chance", 6))
+	var hill_chance: int = int(spec.get("hills_chance", 18))
+
+	for y in range(h):
 		var dist_from_pole: int = y if y < (h - 1 - y) else (h - 1 - y)
 		for x in range(w):
+			var idx: int = y * w + x
 			var tile: Tile = map.get_tile(x, y)
 			if tile == null:
 				continue
-			tile.terrain_id = _pick_terrain(dist_from_pole, h, rng)
+			if not bool(land[idx]):
+				tile.terrain_id = "ocean"
+				continue
+			if forced_mtn != null and bool(forced_mtn[idx]):
+				tile.terrain_id = "mountain"
+				continue
+			if forced_hill != null and bool(forced_hill[idx]):
+				tile.terrain_id = "hills"
+				continue
+			# Landform roll overlays climate; keep peaks off the pole-adjacent row.
+			var form: int = rng.randi_range(0, 99)
+			if form < mtn_chance and dist_from_pole >= POLE_OCEAN_ROWS + 1:
+				tile.terrain_id = "mountain"
+				continue
+			if form < mtn_chance + hill_chance:
+				tile.terrain_id = "hills"
+				continue
+			tile.terrain_id = _flat_terrain(climate, x, y, w, h, dist_from_pole, rng)
 
-	_add_coasts(map, db)
+	_add_features(map, rng, spec)
 
-# Choose a terrain id for one tile from its latitude and the RNG.
-static func _pick_terrain(dist_from_pole: int, h: int, rng: RNG) -> String:
-	if dist_from_pole < POLE_OCEAN_ROWS:
-		return "ocean"
+# Choose a flat-land terrain for the tile's climate band.
+static func _flat_terrain(climate: String, x: int, y: int, w: int, h: int, dist_from_pole: int, rng: RNG) -> String:
+	if climate == "oasis":
+		# Desert heart, fertile rim — distance from the map centre sets the band.
+		var fx: int = x * 1000 / w
+		var fy: int = y * 1000 / h
+		var dcx: int = fx - 500 if fx >= 500 else 500 - fx
+		var dcy: int = fy - 500 if fy >= 500 else 500 - fy
+		var dmax: int = dcx if dcx >= dcy else dcy
+		if dmax < 300:
+			return "desert"
+		return "grassland" if rng.rand_bool_percent(55) else "plains"
 
-	# latitude%: ~0 near the poles, ~100 at the equator (integer scaled).
-	var lat_pct: int = dist_from_pole * 200 / h
+	# latitude%: ~0 near the climate poles, ~100 at the climate equator.
+	var lat_pct: int
+	if climate == "tilted":
+		# Poles on the left/right edges: latitude runs along x instead of y.
+		var dist_from_side: int = x if x < (w - 1 - x) else (w - 1 - x)
+		lat_pct = dist_from_side * 200 / w
+	else:
+		lat_pct = dist_from_pole * 200 / h
 
-	# Scattered inland seas to break up the coastline.
-	if rng.rand_bool_percent(SEA_CHANCE):
-		return "ocean"
+	if climate == "plains":
+		# Mostly grassland/plains; only the coldest fringes turn to tundra.
+		if lat_pct < 12:
+			return "tundra"
+		return "grassland" if rng.rand_bool_percent(60) else "plains"
 
-	# Landform: mountains and hills overlay any climate.
-	var form: int = rng.randi_range(0, 99)
-	if form < MOUNTAIN_CHANCE and dist_from_pole >= POLE_OCEAN_ROWS + 1:
-		return "mountain"
-	if form < MOUNTAIN_CHANCE + HILLS_CHANCE:
-		return "hills"
+	if climate == "ice_age":
+		# Cold world: a wide snow/tundra mass, a narrow temperate equatorial band.
+		if lat_pct < 70:
+			return "snow" if rng.rand_bool_percent(35) else "tundra"
+		elif lat_pct < 88:
+			return "tundra" if rng.rand_bool_percent(45) else "plains"
+		return "grassland" if rng.rand_bool_percent(50) else "plains"
 
-	# Flat land coloured by climate band.
+	# Default latitude climate.
 	if lat_pct < COLD_LAT:
 		return "snow" if rng.rand_bool_percent(40) else "tundra"
 	elif lat_pct < WARM_LAT:
 		return "grassland" if rng.rand_bool_percent(55) else "plains"
-	else:
-		var warm: int = rng.randi_range(0, 99)
-		if warm < 30:
-			return "desert"
-		elif warm < 65:
-			return "plains"
-		return "grassland"
+	var warm: int = rng.randi_range(0, 99)
+	if warm < 30:
+		return "desert"
+	elif warm < 65:
+		return "plains"
+	return "grassland"
+
+# Sprinkle surface features over freshly-painted land: forests in cool/temperate
+# bands, jungle in the warm band, oases on the desert tiles of an Oasis map.
+static func _add_features(map: WorldMap, rng: RNG, spec: Dictionary) -> void:
+	var w: int = map.width
+	var h: int = map.height
+	var forest_chance: int = int(spec.get("forest_chance", 0))
+	var jungle_chance: int = int(spec.get("jungle_chance", 0))
+	var oasis_chance: int = int(spec.get("oasis_chance", 0))
+	for y in range(h):
+		var dist_from_pole: int = y if y < (h - 1 - y) else (h - 1 - y)
+		var lat_pct: int = dist_from_pole * 200 / h
+		for x in range(w):
+			var tile: Tile = map.get_tile(x, y)
+			if tile == null:
+				continue
+			var ter: String = tile.terrain_id
+			if ter == "desert":
+				if oasis_chance > 0 and rng.rand_bool_percent(oasis_chance):
+					tile.feature_id = "oasis"
+				continue
+			if ter != "grassland" and ter != "plains" and ter != "tundra" and ter != "hills":
+				continue
+			if lat_pct >= WARM_LAT and ter != "tundra":
+				if jungle_chance > 0 and rng.rand_bool_percent(jungle_chance):
+					tile.feature_id = "jungle"
+			elif ter != "tundra" or lat_pct >= COLD_LAT:
+				if forest_chance > 0 and rng.rand_bool_percent(forest_chance):
+					tile.feature_id = "forest"
 
 # Convert every ocean tile that touches land into coast (shallow water).
 static func _add_coasts(map: WorldMap, db: DataDB) -> void:
@@ -95,24 +472,47 @@ static func _add_coasts(map: WorldMap, db: DataDB) -> void:
 	for t in coastal:
 		t.terrain_id = "coast"
 
-# ── Start positions (used when placing each player's opening units) ────────────
+# Seed undiscovered exploration sites (§9) on the far side of a Terra map's New
+# World, so colonising it later pays off. Deterministic for the seed.
+static func _mark_new_world(map: WorldMap, db: DataDB, rng: RNG, spec: Dictionary) -> void:
+	var nw: Dictionary = spec.get("new_world", {})
+	var x_min: int = map.width * int(nw.get("x_min_pct", 55)) / 100
+	var chance: int = int(nw.get("discovery_chance", 5))
+	for y in range(map.height):
+		for x in range(x_min, map.width):
+			var tile: Tile = map.get_tile(x, y)
+			if tile == null:
+				continue
+			if db.get_terrain(tile.terrain_id).get("domain", "land") != "land":
+				continue
+			if rng.rand_bool_percent(chance):
+				tile.has_discovery = true
+
+# ── Start positions ─────────────────────────────────────────────────────────────
 
 # Return up to `count` spread-out passable land tiles as [x, y] pairs. Picks the
 # tile that maximises the minimum distance to already-chosen starts, so players
-# begin far apart. Deterministic for a given map.
-static func find_start_positions(map: WorldMap, db: DataDB, count: int) -> Array:
-	var land: Array = []
-	for tile in map.all_tiles():
-		var ter: Dictionary = db.get_terrain(tile.terrain_id)
-		if ter.get("domain", "land") == "land" and not ter.get("impassable", false):
-			land.append(tile)
+# begin far apart. When the map type defines `start_bounds` (e.g. Terra's Old
+# World), candidates are confined to that region. Deterministic for a given map.
+static func find_start_positions(map: WorldMap, db: DataDB, count: int, map_type_id: String = "") -> Array:
+	var bounds: Dictionary = {}
+	if map_type_id != "":
+		bounds = db.get_map_type(map_type_id).get("start_bounds", {})
+
+	var land: Array = _candidate_land(map, db, bounds)
+	# If the bounded region cannot host everyone, fall back to the whole map.
+	if land.size() < count:
+		land = _candidate_land(map, db, {})
 	if land.empty():
 		return []
 
 	var starts: Array = []
-	# First start: the land tile nearest the map centre.
+	# First start: the candidate tile nearest the region's centre.
 	var cx: int = map.width / 2
 	var cy: int = map.height / 2
+	if not bounds.empty():
+		cx = (int(bounds.get("x_min_pct", 0)) + int(bounds.get("x_max_pct", 100))) * map.width / 200
+		cy = (int(bounds.get("y_min_pct", 0)) + int(bounds.get("y_max_pct", 100))) * map.height / 200
 	var best: Tile = land[0]
 	var best_d: int = 1 << 30
 	for tile in land:
@@ -140,3 +540,23 @@ static func find_start_positions(map: WorldMap, db: DataDB, count: int) -> Array
 		starts.append([pick.x, pick.y])
 
 	return starts
+
+# Passable land tiles, optionally clipped to a percentage-bounded region.
+static func _candidate_land(map: WorldMap, db: DataDB, bounds: Dictionary) -> Array:
+	var x_lo: int = 0
+	var x_hi: int = map.width - 1
+	var y_lo: int = 0
+	var y_hi: int = map.height - 1
+	if not bounds.empty():
+		x_lo = map.width * int(bounds.get("x_min_pct", 0)) / 100
+		x_hi = map.width * int(bounds.get("x_max_pct", 100)) / 100
+		y_lo = map.height * int(bounds.get("y_min_pct", 0)) / 100
+		y_hi = map.height * int(bounds.get("y_max_pct", 100)) / 100
+	var land: Array = []
+	for tile in map.all_tiles():
+		if tile.x < x_lo or tile.x > x_hi or tile.y < y_lo or tile.y > y_hi:
+			continue
+		var ter: Dictionary = db.get_terrain(tile.terrain_id)
+		if ter.get("domain", "land") == "land" and not ter.get("impassable", false):
+			land.append(tile)
+	return land
