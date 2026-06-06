@@ -219,11 +219,14 @@ func apply_command(cmd: Dictionary) -> bool:
 		IDs.CommandType.UNIT_WAKE, IDs.CommandType.UNIT_SLEEP, \
 		IDs.CommandType.UNIT_FORTIFY, IDs.CommandType.UNIT_CANCEL_ORDERS, \
 		IDs.CommandType.UNIT_DISBAND, IDs.CommandType.UNIT_UPGRADE, \
-		IDs.CommandType.UNIT_PROMOTE:
+		IDs.CommandType.UNIT_PROMOTE, IDs.CommandType.UNIT_GIFT:
 			return _cmd_unit_command(cmd)
 		IDs.CommandType.MISSION_MOVE_TO, IDs.CommandType.MISSION_BUILD_ROAD, \
 		IDs.CommandType.MISSION_SKIP_TURN, IDs.CommandType.MISSION_PILLAGE, \
-		IDs.CommandType.MISSION_BOMBARD, IDs.CommandType.MISSION_AIRLIFT:
+		IDs.CommandType.MISSION_BOMBARD, IDs.CommandType.MISSION_AIRLIFT, \
+		IDs.CommandType.MISSION_SENTRY, IDs.CommandType.MISSION_HEAL, \
+		IDs.CommandType.MISSION_MOVE_TO_UNIT, IDs.CommandType.MISSION_RECON, \
+		IDs.CommandType.MISSION_AIR_PATROL, IDs.CommandType.MISSION_SEA_PATROL:
 			return _cmd_mission(cmd)
 		IDs.CommandType.DO_CONTROL:
 			return _cmd_do_control(cmd)
@@ -975,6 +978,9 @@ func _cmd_unit_command(cmd: Dictionary) -> bool:
 	match ctype:
 		IDs.CommandType.UNIT_WAKE:
 			u.is_fortified = false
+			u.is_sentry = false
+			u.is_patrolling = false
+			u.is_healing = false
 			u.has_moved = false
 			u.movement_left = u.movement_total
 		IDs.CommandType.UNIT_SLEEP:
@@ -1012,6 +1018,18 @@ func _cmd_unit_command(cmd: Dictionary) -> bool:
 			p.treasury -= cost
 			u.unit_type_id = upgrades_to
 			u.base_strength = int(new_udata.get("base_strength", u.base_strength))
+		IDs.CommandType.UNIT_GIFT:
+			var target_id: int = int(cmd.get("target_player_id", -1))
+			var target: Player = _gs.get_player(target_id)
+			if target == null or target_id == player_id:
+				return false
+			# Cargo travels with its transport; reassign it too.
+			for cargo_id in u.cargo:
+				var c: Unit = _gs.get_unit(cargo_id)
+				if c != null:
+					c.owner_player_id = target_id
+			u.owner_player_id = target_id
+			_selection.selected_unit_ids.erase(unit_id)
 		_:
 			return false
 
@@ -1091,6 +1109,43 @@ func _cmd_mission(cmd: Dictionary) -> bool:
 			u.x = tx2; u.y = ty2
 			u.has_moved = true
 			u.movement_left = 0
+		IDs.CommandType.MISSION_SENTRY:
+			# Hold position on watch; ends the turn but persists across turns
+			# until woken (cycle-idle skips sentries — see cycle_idle_units).
+			u.is_sentry = true
+			u.has_moved = true
+			u.movement_left = 0
+		IDs.CommandType.MISSION_HEAL:
+			# Hold position to recover; passive healing happens in turn upkeep.
+			u.is_healing = true
+			u.has_moved = true
+			u.movement_left = 0
+		IDs.CommandType.MISSION_AIR_PATROL, IDs.CommandType.MISSION_SEA_PATROL:
+			# Patrol stance for air/naval units; holds the tile on standby.
+			u.is_patrolling = true
+			u.has_moved = true
+			u.movement_left = 0
+		IDs.CommandType.MISSION_MOVE_TO_UNIT:
+			var tu: Unit = _gs.get_unit(int(cmd.get("target_unit_id", -1)))
+			if tu == null:
+				return false
+			var muc: Dictionary = {
+				"type": IDs.CommandType.MOVE_STACK,
+				"player_id": player_id,
+				"from_x": u.x, "from_y": u.y,
+				"to_x": tu.x, "to_y": tu.y
+			}
+			return _cmd_move_stack(muc)
+		IDs.CommandType.MISSION_RECON:
+			# Scout toward a target tile; reveal follows the move via fog update.
+			var rc: Dictionary = {
+				"type": IDs.CommandType.MOVE_STACK,
+				"player_id": player_id,
+				"from_x": u.x, "from_y": u.y,
+				"to_x": int(cmd.get("target_x", u.x)),
+				"to_y": int(cmd.get("target_y", u.y))
+			}
+			return _cmd_move_stack(rc)
 		_:
 			return false
 
@@ -1116,7 +1171,11 @@ func _cmd_do_control(cmd: Dictionary) -> bool:
 		IDs.ControlType.OPEN_MILITARY, IDs.ControlType.OPEN_ESPIONAGE, \
 		IDs.ControlType.OPEN_ENCYCLOPEDIA, IDs.ControlType.OPEN_CITY_SCREEN, \
 		IDs.ControlType.OPEN_SAVE_LOAD, IDs.ControlType.QUICK_SAVE, \
-		IDs.ControlType.QUICK_LOAD, IDs.ControlType.OPEN_MENU:
+		IDs.ControlType.QUICK_LOAD, IDs.ControlType.OPEN_MENU, \
+		IDs.ControlType.TOGGLE_SCORE, IDs.ControlType.OPEN_RELIGION, \
+		IDs.ControlType.OPEN_CORPORATION, IDs.ControlType.OPEN_TURN_LOG, \
+		IDs.ControlType.OPEN_DOMESTIC_ADVISOR, \
+		IDs.ControlType.OPEN_VICTORY_PROGRESS, IDs.ControlType.OPEN_OPTIONS:
 			emit_signal("screen_requested", ctrl_type)
 	return true
 
@@ -1150,7 +1209,7 @@ func cycle_idle_units(workers_only: bool = false) -> void:
 	for u in _gs.units:
 		if u.owner_player_id != _gs.current_player_id:
 			continue
-		if u.has_moved or u.is_fortified:
+		if u.has_moved or u.is_fortified or u.is_sentry or u.is_patrolling or u.is_healing:
 			continue
 		if workers_only and not _db.get_unit(u.unit_type_id).get("can_build", false):
 			continue

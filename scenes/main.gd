@@ -17,6 +17,7 @@ extends Node
 var _facade
 var _db
 var _dbg_log   # DebugLog (advanced debugging; only active in interactive debug builds)
+var _extra_screens = {}   # ControlType -> simple read-only info screen node
 
 func init_with_facade(facade, db) -> void:
 	_facade = facade
@@ -74,6 +75,9 @@ func _ready() -> void:
 		var save_load = screens.get_node_or_null("SaveLoadScreen")
 		if pause != null and save_load != null and pause.has_method("set_save_load_screen"):
 			pause.set_save_load_screen(save_load)
+		# Stand up the simple read-only advisor/info screens (§3.1) programmatically
+		# so they need no .tscn nodes; each is keyed by the control that opens it.
+		_init_extra_screens(screens)
 
 	# Wire input router
 	var input_router = get_node_or_null("InputRouter")
@@ -107,6 +111,26 @@ func _ready() -> void:
 		if world_view.has_method("center_on_player"):
 			world_view.center_on_player(_facade.get_state().current_player_id)
 
+func _init_extra_screens(screens) -> void:
+	var defs = {
+		IDs.ControlType.OPEN_RELIGION: "res://scenes/screens/religion_screen.gd",
+		IDs.ControlType.OPEN_CORPORATION: "res://scenes/screens/corporation_screen.gd",
+		IDs.ControlType.OPEN_TURN_LOG: "res://scenes/screens/turn_log_screen.gd",
+		IDs.ControlType.OPEN_DOMESTIC_ADVISOR: "res://scenes/screens/domestic_advisor_screen.gd",
+		IDs.ControlType.OPEN_VICTORY_PROGRESS: "res://scenes/screens/victory_progress_screen.gd",
+		IDs.ControlType.OPEN_OPTIONS: "res://scenes/screens/options_screen.gd",
+		IDs.ControlType.OPEN_FINANCE: "res://scenes/screens/finance_screen.gd",
+		IDs.ControlType.OPEN_MILITARY: "res://scenes/screens/military_screen.gd",
+		IDs.ControlType.OPEN_ESPIONAGE: "res://scenes/screens/espionage_screen.gd",
+		IDs.ControlType.OPEN_ENCYCLOPEDIA: "res://scenes/screens/encyclopedia_screen.gd",
+	}
+	for ctrl in defs:
+		var sc = load(defs[ctrl]).new()
+		sc.name = "InfoScreen_" + str(ctrl)
+		screens.add_child(sc)
+		sc.init(_facade)
+		_extra_screens[ctrl] = sc
+
 func _init_node(path: String, args: Array) -> void:
 	var node = get_node_or_null(path)
 	if node != null and node.has_method("init"):
@@ -124,6 +148,16 @@ func _on_player_turn_started(player_id: int) -> void:
 	print("Turn started: ", p.name if p != null else str(player_id))
 
 func _on_screen_requested(screen_id: int) -> void:
+	# Score toggle: pure presentation — flip the score bar's visibility.
+	if screen_id == IDs.ControlType.TOGGLE_SCORE:
+		var score_bar = get_node_or_null("HUD/VBox/TurnScoreBar")
+		if score_bar != null:
+			score_bar.visible = not score_bar.visible
+		return
+	# Simple read-only advisor/info screens opened programmatically.
+	if _extra_screens.has(screen_id):
+		_extra_screens[screen_id].show_screen()
+		return
 	match screen_id:
 		IDs.ControlType.OPEN_CITY_SCREEN:
 			var city_screen = get_node_or_null("Screens/CityScreen")

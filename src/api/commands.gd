@@ -131,6 +131,14 @@ static func unit_promote(player_id: int, unit_id: int, promotion_id: String) -> 
 		"promotion_id": promotion_id
 	}
 
+static func unit_gift(player_id: int, unit_id: int, target_player_id: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.UNIT_GIFT,
+		"player_id": player_id,
+		"unit_id": unit_id,
+		"target_player_id": target_player_id
+	}
+
 # ── Unit missions (§3.3) ──────────────────────────────────────────────────────
 
 static func mission_move_to(player_id: int, unit_id: int,
@@ -168,6 +176,36 @@ static func mission_airlift(player_id: int, unit_id: int,
 		"unit_id": unit_id,
 		"target_x": target_x, "target_y": target_y
 	}
+
+static func mission_sentry(player_id: int, unit_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.MISSION_SENTRY, "player_id": player_id, "unit_id": unit_id}
+
+static func mission_heal(player_id: int, unit_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.MISSION_HEAL, "player_id": player_id, "unit_id": unit_id}
+
+static func mission_move_to_unit(player_id: int, unit_id: int,
+		target_unit_id: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.MISSION_MOVE_TO_UNIT,
+		"player_id": player_id,
+		"unit_id": unit_id,
+		"target_unit_id": target_unit_id
+	}
+
+static func mission_recon(player_id: int, unit_id: int,
+		target_x: int, target_y: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.MISSION_RECON,
+		"player_id": player_id,
+		"unit_id": unit_id,
+		"target_x": target_x, "target_y": target_y
+	}
+
+static func mission_air_patrol(player_id: int, unit_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.MISSION_AIR_PATROL, "player_id": player_id, "unit_id": unit_id}
+
+static func mission_sea_patrol(player_id: int, unit_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.MISSION_SEA_PATROL, "player_id": player_id, "unit_id": unit_id}
 
 # ── Trades (§7) ───────────────────────────────────────────────────────────────
 

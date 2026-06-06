@@ -113,25 +113,37 @@ Covered by `tests/sim/test_policy_effects.gd`.
 `user-interface-design.md` §3.1–§3.3 enumerate the full functional command set as a
 superset; the *implemented* vocabulary is whatever the `IDs` enums define
 (`ControlType`, `UnitCmd`, `UnitMission`, `InterfaceMode`, `WidgetType`,
-`PopupType`, `DirtyRegion`). Items present in the spec with **no** enum value,
-command, or handler in the current build include (verified absent in `src/`, not
-exhaustive):
+`PopupType`, `DirtyRegion`).
 
-- **Controls (§3.1):** camera/view modes (orthographic/flying/top-down/isometric,
-  globe 3D view), score-display toggle, and several advisor/info screens named in
-  the spec (religion, corporation, turn log, domestic advisor, victory progress,
-  hall of fame, game/admin details, options, world-builder). Session controls
-  `retire`, `all-chat`, `team-chat`, `free-colony` are also unmodelled.
-- **Unit commands (§3.2):** `gift to another player` has no command. (Load/unload
-  *do* exist — `CommandType.LOAD_UNIT` / `UNLOAD_UNIT`; automation exists as
-  `UnitCmd.AUTOMATE` / `STOP_AUTOMATE`.)
-- **Unit missions (§3.3):** `air patrol`, `sea patrol`, `sentry`, `heal`,
-  `move-to-unit`, `scout/recon`, and the distinct espionage verbs `sabotage` /
-  `destroy` / `steal plans` have no `UnitMission` value. (Many other spec
-  "missions" *are* implemented through other paths — `SPREAD_BELIEF`,
-  `ESPIONAGE_MISSION`, and Great-Person verbs via `GP_ACTION` — so they are not
-  gaps.) `draft` (Nationhood) and `establish trade route` are likewise unbuilt,
-  matching their inert policy effects in §2.
+As of 2026-06-05 the readily-modellable items have been built (see *Recently
+reconciled*): the **score-display toggle** and the **religion / corporation /
+turn-log / domestic-advisor / victory-progress / options** advisor screens (plus
+simple text screens wired for the previously-dangling **finance / military /
+espionage / encyclopedia** controls); the **`gift to another player`** unit
+command; and the **`sentry`, `heal`, `move-to-unit`, `scout/recon`, `air patrol`,
+`sea patrol`** unit missions. Each is a `ControlType` / `UnitCmd` / `UnitMission`
+value with a command factory, a `SimFacade` handler, and (for controls) a simple
+read-only text screen under `scenes/screens/`.
+
+The remaining spec items are **deliberately deferred**, each blocked on a
+subsystem this build does not have:
+
+- **Camera/view modes** (orthographic/flying/top-down/isometric, globe 3D view) —
+  a host-renderer concern outside the headless rules layer; intentionally skipped.
+- **Hall of fame, game/admin details, world-builder/editor** — need cross-game
+  persistence, an admin/host channel, and a full map editor respectively.
+- **Session `retire`, `all-chat`, `team-chat`, `free-colony`** — multiplayer chat
+  and colony-split subsystems (this build is single-machine hotseat).
+- **Espionage verbs `sabotage` / `destroy` / `steal plans` as *unit missions*** —
+  the mechanic exists at alliance scope via `ESPIONAGE_MISSION`; a spy-unit-on-tile
+  mission model is unbuilt.
+- **`draft` (Nationhood) and `establish trade route`** — unbuilt mechanics already
+  tracked in §2 (inert policy effects).
+
+(For reference, `LOAD_UNIT` / `UNLOAD_UNIT` and `UnitCmd.AUTOMATE` /
+`STOP_AUTOMATE` already existed; `SPREAD_BELIEF`, `ESPIONAGE_MISSION`, and
+Great-Person verbs via `GP_ACTION` cover other spec "missions" through their own
+paths.)
 
 ## 4. Pipeline phase stubs
 
@@ -149,6 +161,20 @@ fact implemented and have been corrected there: `WORLD_TILE_UPKEEP` →
 
 ## Recently reconciled
 
+- **2026-06-05** — Built the readily-modellable §3 UI vocabulary. New
+  `IDs.ControlType` values (`TOGGLE_SCORE`, `OPEN_RELIGION`, `OPEN_CORPORATION`,
+  `OPEN_TURN_LOG`, `OPEN_DOMESTIC_ADVISOR`, `OPEN_VICTORY_PROGRESS`,
+  `OPEN_OPTIONS`) plus simple read-only text screens (`scenes/screens/`, a shared
+  `info_screen.gd` scaffold), also wiring the previously-dangling
+  finance/military/espionage/encyclopedia controls to screens in `main.gd`. New
+  `UnitCmd.GIFT` (+ `CommandType.UNIT_GIFT`) transfers unit ownership; new
+  `UnitMission` values `SENTRY` / `HEAL` / `MOVE_TO_UNIT` / `RECON` /
+  `AIR_PATROL` / `SEA_PATROL` (+ matching `CommandType`s, `Commands` factories,
+  `_cmd_mission` / `_cmd_unit_command` handlers, and `Unit` stance flags
+  `is_sentry` / `is_patrolling` / `is_healing`, serialized). Covered by
+  `tests/api/test_ui_contract.gd` and `tests/scenes/test_info_screens.gd`. The
+  remaining §3 items are deferred on unbuilt subsystems (camera modes,
+  persistence/editor/MP, unit-mission espionage, draft/trade-route).
 - **2026-06-05** — Full content reconciliation of the §1 tables (wonders,
   buildings, resources, promotions, terrain), entry-by-entry against
   `game-data.md`. Wonders matched exactly. Drift corrected in `structures.json`:

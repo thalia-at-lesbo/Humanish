@@ -45,6 +45,12 @@ var has_moved: bool = false
 var has_attacked: bool = false
 var is_fortified: bool = false
 var is_wild: bool = false
+# Standing-order stances (§3.3 missions): a unit holds its tile under one of
+# these until woken or ordered otherwise. Mutually informative, not exclusive of
+# is_fortified, but set independently by the matching mission.
+var is_sentry: bool = false
+var is_patrolling: bool = false
+var is_healing: bool = false
 
 func has_promotion(promo_id: String) -> bool:
 	return promo_id in promotions
@@ -93,7 +99,9 @@ func serialize() -> Dictionary:
 		"build_turns_left": build_turns_left,
 		"building_improvement": building_improvement,
 		"has_moved": has_moved, "has_attacked": has_attacked,
-		"is_fortified": is_fortified, "is_wild": is_wild
+		"is_fortified": is_fortified, "is_wild": is_wild,
+		"is_sentry": is_sentry, "is_patrolling": is_patrolling,
+		"is_healing": is_healing
 	}
 
 static func deserialize(d: Dictionary):
@@ -118,4 +126,7 @@ static func deserialize(d: Dictionary):
 	u.has_attacked = bool(d.get("has_attacked", false))
 	u.is_fortified = bool(d.get("is_fortified", false))
 	u.is_wild = bool(d.get("is_wild", false))
+	u.is_sentry = bool(d.get("is_sentry", false))
+	u.is_patrolling = bool(d.get("is_patrolling", false))
+	u.is_healing = bool(d.get("is_healing", false))
 	return u

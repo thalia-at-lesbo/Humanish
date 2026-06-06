@@ -23,7 +23,11 @@ scenes/
   hud/                      hud.tscn, turn_score_bar, research_bar, slider_panel,
                             selection_panel, message_log, end_turn_button
   screens/                  city_screen, tech_chooser, policy_screen,
-                            diplomacy_screen, save_load_screen, pause_menu
+                            diplomacy_screen, save_load_screen, pause_menu;
+                            info_screen (shared read-only scaffold) + the advisor
+                            screens (religion, corporation, turn_log,
+                            domestic_advisor, victory_progress, options, finance,
+                            military, espionage, encyclopedia)
   input/                    input_router.gd, hotkey_map.gd
   hotseat/                  hotseat_manager.gd, pass_device_screen.tscn/.gd
   debug/                    debug_overlay.gd ('~' menu), terminal_console.gd
@@ -90,6 +94,8 @@ Root game scene. Wires `WorldView`, `HUD` sub-panels, `InputRouter`, and `Hotsea
 
 ### Full-screen overlays (`scenes/screens/`)
 `CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen`, `PauseMenu` — each exposes a `show_screen()` entry point and reads state through the facade.
+
+The simple read-only advisor/info screens (`OPEN_RELIGION`, `OPEN_CORPORATION`, `OPEN_TURN_LOG`, `OPEN_DOMESTIC_ADVISOR`, `OPEN_VICTORY_PROGRESS`, `OPEN_OPTIONS`, plus `OPEN_FINANCE`/`OPEN_MILITARY`/`OPEN_ESPIONAGE`/`OPEN_ENCYCLOPEDIA`) share a `info_screen.gd` scaffold — opaque backdrop, scrolled text labels, Close — and override `_populate(vbox)`. They carry no `.tscn` node; `main.gd:_init_extra_screens()` instantiates each programmatically under the `Screens` node, keyed by the `ControlType` that opens it (via the facade's `screen_requested` signal). The §3.1 control vocabulary that opens them is documented in `docs/planning/designgaps.md` §3.
 
 ### Input (`scenes/input/`)
 `InputRouter` translates raw `_input` events into `Commands.*()` calls via `facade.apply_command()`. `HotkeyMap` loads key bindings from `data/hotkeys.json`.

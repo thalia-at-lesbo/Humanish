@@ -66,7 +66,16 @@ enum CommandType {
     UNLOAD_UNIT = 35,
     SET_SUBORDINATION = 36,
     # Great Person actions (§14)
-    GP_ACTION = 37
+    GP_ACTION = 37,
+    # Additional unit command (§3.2)
+    UNIT_GIFT = 38,
+    # Additional unit missions (§3.3)
+    MISSION_SENTRY = 39,
+    MISSION_HEAL = 40,
+    MISSION_MOVE_TO_UNIT = 41,
+    MISSION_RECON = 42,
+    MISSION_AIR_PATROL = 43,
+    MISSION_SEA_PATROL = 44
 }
 
 # Win condition types
@@ -115,20 +124,27 @@ enum ControlType {
     OPEN_MILITARY = 17, OPEN_ESPIONAGE = 18, OPEN_ENCYCLOPEDIA = 19,
     OPEN_CITY_SCREEN = 20, OPEN_SAVE_LOAD = 21,
     QUICK_SAVE = 22, QUICK_LOAD = 23,
-    OPEN_MENU = 24
+    OPEN_MENU = 24,
+    # Score display toggle and additional advisor/info screens (§3.1)
+    TOGGLE_SCORE = 25, OPEN_RELIGION = 26, OPEN_CORPORATION = 27,
+    OPEN_TURN_LOG = 28, OPEN_DOMESTIC_ADVISOR = 29,
+    OPEN_VICTORY_PROGRESS = 30, OPEN_OPTIONS = 31
 }
 
 # Direct, immediate unit orders (§3.2)
 enum UnitCmd {
     WAKE = 0, SLEEP = 1, FORTIFY = 2, CANCEL_ORDERS = 3,
-    DISBAND = 4, UPGRADE = 5, PROMOTE = 6, AUTOMATE = 7, STOP_AUTOMATE = 8
+    DISBAND = 4, UPGRADE = 5, PROMOTE = 6, AUTOMATE = 7, STOP_AUTOMATE = 8,
+    GIFT = 9
 }
 
 # Queued unit missions executed over subsequent turns (§3.3)
 enum UnitMission {
     MOVE_TO = 0, ROUTE_TO = 1, SKIP_TURN = 2, PILLAGE = 3,
     FOUND_SETTLEMENT = 4, BUILD_IMPROVEMENT = 5, BUILD_ROAD = 6,
-    RANGED_ATTACK = 7, BOMBARD = 8, AIRLIFT = 9, PARADROP = 10
+    RANGED_ATTACK = 7, BOMBARD = 8, AIRLIFT = 9, PARADROP = 10,
+    SENTRY = 11, HEAL = 12, MOVE_TO_UNIT = 13, RECON = 14,
+    AIR_PATROL = 15, SEA_PATROL = 16
 }
 
 # Phase flags for hooks

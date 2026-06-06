@@ -168,3 +168,86 @@ func test_unit_mission_commands_accepted_by_facade() -> void:
 
 	assert_true(f.apply_command(Commands.mission_skip_turn(pid, uid)), "mission_skip_turn should be accepted")
 	assert_true(gs.get_unit(uid).has_moved, "Unit should have has_moved set after skip")
+
+# ── Additional controls (§3.1) ──────────────────────────────────────────────────
+
+func test_new_advisor_controls_emit_screen_requested() -> void:
+	var f = setup_facade(31)
+	var gs = f.get_state()
+	var pid = gs.current_player_id
+	var ctrls = [
+		IDs.ControlType.OPEN_RELIGION, IDs.ControlType.OPEN_CORPORATION,
+		IDs.ControlType.OPEN_TURN_LOG, IDs.ControlType.OPEN_DOMESTIC_ADVISOR,
+		IDs.ControlType.OPEN_VICTORY_PROGRESS, IDs.ControlType.OPEN_OPTIONS,
+		IDs.ControlType.TOGGLE_SCORE,
+	]
+	watch_signals(f)
+	for ctrl in ctrls:
+		assert_true(f.apply_command(Commands.do_control(pid, ctrl)),
+			"do_control %d should be accepted" % ctrl)
+	assert_signal_emit_count(f, "screen_requested", ctrls.size(),
+		"each new control should emit screen_requested once")
+
+# ── Gift (§3.2) ─────────────────────────────────────────────────────────────────
+
+func test_gift_transfers_unit_ownership() -> void:
+	var f = setup_facade(32)
+	var gs = f.get_state()
+	var giver = gs.players[0].id
+	var receiver = gs.players[1].id
+	gs.current_player_id = giver
+	var uid = _unit(f, giver, "warrior", 3, 3)
+	assert_true(f.apply_command(Commands.unit_gift(giver, uid, receiver)),
+		"unit_gift should be accepted")
+	assert_eq(gs.get_unit(uid).owner_player_id, receiver,
+		"Gifted unit should belong to the receiver")
+
+func test_gift_to_self_is_rejected() -> void:
+	var f = setup_facade(33)
+	var gs = f.get_state()
+	var giver = gs.players[0].id
+	gs.current_player_id = giver
+	var uid = _unit(f, giver, "warrior", 3, 3)
+	assert_false(f.apply_command(Commands.unit_gift(giver, uid, giver)),
+		"Gifting a unit to its own owner should be rejected")
+
+# ── Additional unit missions (§3.3) ──────────────────────────────────────────────
+
+func test_new_unit_missions_accepted_by_facade() -> void:
+	# Flat-grassland fixture map so the moving missions have a clear path.
+	var gs = make_gs(2, 34)
+	var f = bare_facade(gs)
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+
+	var s = make_unit(gs, "warrior", pid, 5, 5).id
+	assert_true(f.apply_command(Commands.mission_sentry(pid, s)), "sentry accepted")
+	assert_true(gs.get_unit(s).is_sentry, "sentry sets is_sentry")
+
+	var h = make_unit(gs, "warrior", pid, 7, 7).id
+	assert_true(f.apply_command(Commands.mission_heal(pid, h)), "heal accepted")
+	assert_true(gs.get_unit(h).is_healing, "heal sets is_healing")
+
+	var a = make_unit(gs, "warrior", pid, 9, 9).id
+	assert_true(f.apply_command(Commands.mission_air_patrol(pid, a)), "air patrol accepted")
+	assert_true(gs.get_unit(a).is_patrolling, "air/sea patrol sets is_patrolling")
+
+	var mover = make_unit(gs, "warrior", pid, 2, 2).id
+	var target = make_unit(gs, "warrior", pid, 2, 3).id
+	assert_true(f.apply_command(Commands.mission_move_to_unit(pid, mover, target)),
+		"move_to_unit accepted")
+
+	var scout = make_unit(gs, "scout", pid, 12, 12).id
+	assert_true(f.apply_command(Commands.mission_recon(pid, scout, 12, 13)),
+		"recon accepted")
+
+func test_sentry_unit_skipped_by_idle_cycle() -> void:
+	var f = setup_facade(35)
+	var gs = f.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = _unit(f, pid, "warrior", 4, 4)
+	f.apply_command(Commands.mission_sentry(pid, u))
+	f.cycle_idle_units(false)
+	assert_eq(f.get_selection().head_unit(), -1,
+		"A sentried unit should not be cycled to as an idle unit")
