@@ -9,7 +9,7 @@ A guide to how the codebase is structured and how the pieces connect at runtime.
 ```
 project.godot               Godot 3.6 project file; registers all class_name globals
                             main_scene → scenes/menus/start_menu.tscn
-data/                       22 JSON config tables — all numeric constants and content live here
+data/                       23 JSON config tables — all numeric constants and content live here
 src/
   core/                     Foundation: math, IDs, RNG, data loading
   world/                    Map geometry, tile output formula, regions, cultural influence
@@ -81,7 +81,7 @@ The wall is enforced by convention: `sim/` and `world/` are pure GDScript `Refer
 The Godot `main_scene`. A full-screen `Control` that builds its UI programmatically. On `_ready()` it loads `DataDB`; the "New Game" button instantiates `SetupScreen` and hides the menu; "Exit" calls `get_tree().quit()`. When `SetupScreen` completes, `StartMenu` instantiates `main.tscn`, calls `main.init_with_facade(facade, db)` before adding it to the tree, sets it as `current_scene`, then frees itself.
 
 ### `SetupScreen` (`scenes/setup/`)
-A programmatic `Control` (no `.tscn`). Initialized via `init(db, on_start_callback)`. Presents: player count (2–4), per-player name and society picker, world size, pace, difficulty, and seed. On "Start Game" it creates a `SimFacade`, calls `facade.setup(...)` with the collected parameters, and fires `on_start_callback(facade, db)`. Society selection injects the chosen society's `leader_id`, `traits`, and `starting_gold` into the player config.
+A programmatic `Control` (no `.tscn`). Initialized via `init(db, on_start_callback)`. Presents: player count (2–4), per-player name and society picker, world size, map type (populated from `data/map_types.json`), pace, difficulty, and seed. On "Start Game" it creates a `SimFacade`, calls `facade.setup(...)` with the collected parameters, and fires `on_start_callback(facade, db)`. Society selection injects the chosen society's `leader_id`, `traits`, and `starting_gold` into the player config.
 
 ### `Main` (`scenes/main.tscn` / `main.gd`)
 Root game scene. Wires `WorldView`, `HUD` sub-panels, `InputRouter`, and `HotseatManager` to the `SimFacade`. Exposes `init_with_facade(facade, db)` — call this **before** adding to the tree so `_ready()` skips the default hardcoded 2-player setup. Routes `screen_requested` signals to the appropriate full-screen nodes (`CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen`); the `OPEN_MENU` control toggles the `PauseMenu` overlay (Resume/Save/Load/New Game/Quit), whose Save/Load buttons defer to the shared `SaveLoadScreen`.
@@ -105,7 +105,7 @@ The simple read-only advisor/info screens (`OPEN_RELIGION`, `OPEN_CORPORATION`, 
 ## Core layer (`src/core/`)
 
 ### `DataDB`
-Loads 21 of the 22 JSON tables from `data/` into typed dictionaries on startup (`db.load_all()`) — every file except `hotkeys.json`, which `HotkeyMap` loads separately. Every other module receives a `DataDB` reference and reads constants through it — no magic numbers in rule code. Cross-references (e.g. `tech_required` in unit definitions pointing at a technology ID) are validated on load.
+Loads 22 of the 23 JSON tables from `data/` into typed dictionaries on startup (`db.load_all()`) — every file except `hotkeys.json`, which `HotkeyMap` loads separately. Every other module receives a `DataDB` reference and reads constants through it — no magic numbers in rule code. Cross-references (e.g. `tech_required` in unit definitions pointing at a technology ID) are validated on load.
 
 The tables and what they configure:
 
@@ -125,12 +125,13 @@ The tables and what they configure:
 | `beliefs.json` / `econ_orgs.json` | Founding prereqs, spread chance, economic effects |
 | `ages.json` / `paces.json` / `difficulties.json` | Scaling multipliers and per-level modifiers |
 | `world_sizes.json` | Map width/height, wrap axes, suggested player count |
+| `map_types.json` | Map-script definitions: land-mask `shape`, `climate`, target `land_fraction`, landform/feature chances, and shape params (read by `MapGen`) |
 | `win_conditions.json` | Condition type and numeric thresholds |
 | `projects.json` | Endgame (spaceship-style) project stages: cost, tech/wonder gate, stage and count-needed; feeds the `endgame_project` win condition |
 | `events.json` | Scripted random-event definitions (min turn, treasury/effect delta, notice text) |
 | `leaders_traits.json` | `"traits"` block: per-trait combat/production/commerce bonuses. `"societies"` block: playable societies each with `leader_id`, `leader_name`, `description`, `traits[]`, and `starting_gold`. |
 
-Typed getters follow the pattern `get_X(id) → Dictionary` for every table. Additional helpers: `get_societies() → Dictionary` (full societies map), `get_society(id) → Dictionary` (single entry).
+Typed getters follow the pattern `get_X(id) → Dictionary` for every table. Additional helpers: `get_societies() → Dictionary` (full societies map), `get_society(id) → Dictionary` (single entry), `get_map_types() → Dictionary` (full map-script map), `get_map_type(id) → Dictionary` (single entry, falling back to `continents`).
 
 ### `RNG`
 Thin wrapper around Godot's `RandomNumberGenerator` (PCG32). A single instance lives on `GameState` (`gs.rng`). Every stochastic call in the pipeline draws from it — never creating a separate generator. `get_state()` / `restore_state()` serialize the seed and state as **strings** (not ints) to avoid JSON's 53-bit double-precision truncation of 64-bit values.
@@ -147,6 +148,16 @@ Enums only. The sim/world core uses `Domain`, `Landform`, `Output`, `UnitClass`,
 ---
 
 ## World layer (`src/world/`)
+
+### `MapGen`
+Pure static procedural generator that fills a blank `WorldMap` with the chosen **map script**. `generate(map, db, rng, map_type_id)` reads the script's spec from `data/map_types.json` and runs two orthogonal stages:
+
+* **shape** builds the land/water *mask* (where the continents lie). Most shapes share one height-field pipeline — random noise → box-blur into blobs → a per-shape height *bias* → percentile *threshold* to the spec's `land_fraction`. The bias is what makes each script distinct: a central blob (`pangaea`), vertical land bands with ocean channels (`continents`), two horizontal bands (`hemispheres`), a radial main blob plus scattered islands (`islands_plus_main` → Big/Medium-and-Small), a downward push for fragmentation (`archipelago`), a rim-vs-centre inversion (`inland_sea`), an upward push that leaves low pockets as lakes (`lakes`), pure noise (`fractal`), or twin Old/New-World blobs with a carved mid-ocean channel (`terra`). `tectonics` instead scatters plate seeds, assigns tiles by nearest seed (Voronoi), and raises mountain ranges along plate boundaries. `shuffle` resolves once, secretly, to one of the core scripts.
+* **climate** *paints* each land tile: a landform roll (mountain/hills from the spec's chances) overlays a flat-terrain band picked by `latitude` (poles top/bottom), `tilted` (poles on the sides), `ice_age` (wide snow/tundra, narrow temperate equator), `plains` (mostly grassland/plains), or `oasis` (desert heart, fertile rim). A feature pass then sprinkles forest/jungle/oasis per the spec's chances. `_add_coasts()` turns land-adjacent ocean into coast.
+
+Everything is drawn from the shared `gs.rng` in a fixed order, so a script is fully deterministic for its seed and captured by save/load (tiles serialize in full). All ids are data-driven (`terrains.json`/`features.json`); per-script tunables live in `map_types.json`, while the structural shape-amplitude constants stay in `map_gen.gd`.
+
+`find_start_positions(map, db, count, map_type_id)` returns spread-out passable land tiles (greedily maximising the minimum inter-start distance). When a script defines `start_bounds` (e.g. Terra confines players to the Old World) candidates are clipped to that percentage-bounded region, falling back to the whole map if it cannot host everyone.
 
 ### `WorldMap` + `Tile`
 The map is a flat array `_tiles[y * width + x]`. `WorldMap` provides wrap-aware access: `get_tile(x, y)` applies modular arithmetic on wrapped axes before indexing. Distance is Chebyshev (8-directional). Key methods: `neighbours4`, `neighbours8`, `tiles_in_range(cx, cy, r)`, `ring_at_distance(cx, cy, r)`.
@@ -284,7 +295,8 @@ db.load_all()
 var facade = SimFacade.new()
 facade.setup(db, seed_val, "standard", "normal", "prince",
     [{"name": "Alice", ...}, {"name": "Bob", ...}],
-    ["last_standing", "dominance", "time"])
+    ["last_standing", "dominance", "time"],
+    "continents")   # map_type_id (optional; defaults to "continents")
 
 # Each player action:
 facade.apply_command(Commands.move_stack(player_id, fx, fy, tx, ty))

@@ -31,6 +31,7 @@ var ages: Dictionary = {}
 var paces: Dictionary = {}
 var difficulties: Dictionary = {}
 var world_sizes: Dictionary = {}
+var map_types: Dictionary = {}
 var leaders_traits: Dictionary = {}
 var projects: Dictionary = {}
 var win_conditions: Dictionary = {}
@@ -57,6 +58,7 @@ func load_all() -> bool:
 	paces        = _load_json("res://data/paces.json")
 	difficulties = _load_json("res://data/difficulties.json")
 	world_sizes  = _load_json("res://data/world_sizes.json")
+	map_types    = _load_json("res://data/map_types.json")
 	leaders_traits = _load_json("res://data/leaders_traits.json")
 	projects     = _load_json("res://data/projects.json")
 	win_conditions = _load_json("res://data/win_conditions.json")
@@ -99,6 +101,12 @@ func get_difficulty(id: String) -> Dictionary:
 
 func get_world_size(id: String) -> Dictionary:
 	return world_sizes.get(id, world_sizes.get("standard", {}))
+
+func get_map_types() -> Dictionary:
+	return map_types
+
+func get_map_type(id: String) -> Dictionary:
+	return map_types.get(id, map_types.get("continents", {}))
 
 func get_promotion(id: String) -> Dictionary:
 	return promotions.get(id, {})

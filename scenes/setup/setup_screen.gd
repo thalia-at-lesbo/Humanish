@@ -20,6 +20,8 @@ var _on_start_callback  # FuncRef(facade, db) called when setup completes
 
 var _player_rows: Array = []
 var _world_size_btn: OptionButton
+var _map_type_btn: OptionButton
+var _map_type_ids: Array = []
 var _pace_btn: OptionButton
 var _difficulty_btn: OptionButton
 var _seed_edit: LineEdit
@@ -96,6 +98,21 @@ func _build_ui() -> void:
 	ws_row.add_child(ws_lbl)
 	ws_row.add_child(_world_size_btn)
 	vbox.add_child(ws_row)
+
+	# Map type (data-driven from data/map_types.json)
+	var mt_row: HBoxContainer = HBoxContainer.new()
+	var mt_lbl: Label = Label.new()
+	mt_lbl.text = "Map type:"
+	_map_type_btn = OptionButton.new()
+	_map_type_ids = _db.get_map_types().keys()
+	for mt_id in _map_type_ids:
+		_map_type_btn.add_item(_db.get_map_type(mt_id).get("name", mt_id))
+	var continents_idx: int = _map_type_ids.find("continents")
+	if continents_idx >= 0:
+		_map_type_btn.select(continents_idx)
+	mt_row.add_child(mt_lbl)
+	mt_row.add_child(_map_type_btn)
+	vbox.add_child(mt_row)
 
 	# Pace
 	var pace_row: HBoxContainer = HBoxContainer.new()
@@ -198,13 +215,16 @@ func _on_start_pressed() -> void:
 		})
 
 	var world_size_id: String = _world_size_btn.get_item_text(_world_size_btn.selected)
+	var map_type_id: String = "continents"
+	if _map_type_btn.selected >= 0 and _map_type_btn.selected < _map_type_ids.size():
+		map_type_id = _map_type_ids[_map_type_btn.selected]
 	var pace_id: String = _pace_btn.get_item_text(_pace_btn.selected)
 	var difficulty_id: String = _difficulty_btn.get_item_text(_difficulty_btn.selected)
 	var seed_val: int = int(_seed_edit.text) if _seed_edit.text.is_valid_integer() else randi()
 
 	_facade = load("res://src/api/sim_facade.gd").new()
 	_facade.setup(_db, seed_val, world_size_id, pace_id, difficulty_id,
-		player_configs, ["last_standing", "dominance", "cultural", "time"])
+		player_configs, ["last_standing", "dominance", "cultural", "time"], map_type_id)
 
 	if _on_start_callback != null:
 		_on_start_callback.call_func(_facade, _db)
