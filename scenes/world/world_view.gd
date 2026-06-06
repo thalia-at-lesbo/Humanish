@@ -26,9 +26,16 @@ const TERRAIN_COLORS: Dictionary = {
 	"coast":     Color(0.4, 0.6, 0.9),
 	"ocean":     Color(0.2, 0.35, 0.7),
 	"hills":     Color(0.55, 0.45, 0.3),
-	"mountain":  Color(0.5, 0.5, 0.5),
+	"mountain":  Color(0.46, 0.44, 0.42),
 }
-const DEFAULT_TERRAIN_COLOR: Color = Color(0.3, 0.3, 0.3)
+# A glaring magenta, deliberately unlike any real terrain, so a tile whose
+# terrain_id is missing/unknown reads as an obvious bug instead of being mistaken
+# for the (grey) mountain tiles. If you ever see magenta on the map, a terrain id
+# is absent from TERRAIN_COLORS or from the data tables.
+const DEFAULT_TERRAIN_COLOR: Color = Color(1.0, 0.0, 1.0)
+# Landforms that get a peak glyph drawn on top so they are recognisable as
+# raised terrain rather than a flat grey square that looks like an artifact.
+const PEAK_COLOR: Color = Color(0.30, 0.28, 0.26)
 
 # Wild/raider forces (owner id -2) — a deliberate charcoal so they read as
 # hostile barbarians rather than rendering glitches.
@@ -127,6 +134,11 @@ func _draw() -> void:
 				color = color.darkened(0.5)
 			draw_rect(rect, color)
 
+			# Raised-terrain glyph: a peak so mountains/hills read as terrain
+			# (and never as a featureless grey "error" square). Dimmed in fog.
+			if terrain_id == "mountain" or terrain_id == "hills":
+				_draw_peak(rect, terrain_id == "mountain", in_fog)
+
 			# Combat flash
 			if _flash_tiles.has(tile_key) and now < _flash_tiles[tile_key]:
 				draw_rect(rect, Color(1, 0.1, 0.1, 0.4))
@@ -206,6 +218,31 @@ func _draw_unit(u, gs, is_selected: bool = false) -> void:
 		var bar_rect: Rect2 = Rect2(unit_rect.position,
 			Vector2(bar_w, 3 * _zoom))
 		draw_rect(bar_rect, Color.green)
+
+# Draw a peak (a triangle, two peaks for mountains) centred in the tile so raised
+# terrain is visually distinct from flat grey. `tall` draws the bigger mountain
+# glyph; otherwise the smaller hill bump.
+func _draw_peak(rect: Rect2, tall: bool, in_fog: bool) -> void:
+	var col: Color = PEAK_COLOR.darkened(0.5) if in_fog else PEAK_COLOR
+	var base_y: float = rect.position.y + rect.size.y * (0.78 if tall else 0.72)
+	var top_y: float = rect.position.y + rect.size.y * (0.22 if tall else 0.42)
+	var cx: float = rect.position.x + rect.size.x * 0.5
+	var half: float = rect.size.x * (0.28 if tall else 0.22)
+	draw_colored_polygon(PoolVector2Array([
+		Vector2(cx - half, base_y),
+		Vector2(cx, top_y),
+		Vector2(cx + half, base_y),
+	]), col)
+	if tall:
+		# A second, lower peak so a mountain reads as a range, not a single spike.
+		var cx2: float = cx + half * 0.9
+		var by2: float = base_y
+		var ty2: float = rect.position.y + rect.size.y * 0.40
+		draw_colored_polygon(PoolVector2Array([
+			Vector2(cx2 - half * 0.7, by2),
+			Vector2(cx2, ty2),
+			Vector2(cx2 + half * 0.7, by2),
+		]), col.darkened(0.1))
 
 # A small circular badge in the tile's top-right corner showing how many units
 # share the tile, so the player knows there is a stack to click through.

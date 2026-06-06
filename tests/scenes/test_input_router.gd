@@ -111,9 +111,9 @@ func test_auto_advance_can_be_disabled() -> void:
 	assert_eq(facade.get_selection().head_unit(), a.id,
 		"With auto-advance off, selection does not move on its own")
 
-# ── Click priority: a selected unit treats other tiles as move destinations ───
+# ── Click model: LEFT selects (never moves), RIGHT moves ──────────────────────
 
-func test_selected_unit_moves_onto_friendly_unit_tile() -> void:
+func test_right_click_moves_selected_unit_onto_empty_tile() -> void:
 	var facade = setup_facade(2020, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
 	var gs = facade.get_state()
@@ -122,16 +122,15 @@ func test_selected_unit_moves_onto_friendly_unit_tile() -> void:
 	gs.map.get_tile(3, 3).terrain_id = "grassland"
 	gs.map.get_tile(4, 3).terrain_id = "grassland"
 	var mover = make_unit(gs, "warrior", pid, 3, 3)
-	make_unit(gs, "scout", pid, 4, 3)   # a friendly unit sits on the destination
 	facade.select_unit(mover.id)
 
 	var ir = _router()
 	ir._facade = facade
-	ir._handle_selection_click(4, 3, gs)
+	ir._handle_move_click(4, 3, gs)
 	assert_eq([mover.x, mover.y], [4, 3],
-		"A selected unit moves onto a friendly-occupied tile, not selecting it")
+		"Right-click moves a selected unit onto an adjacent empty tile")
 
-func test_selected_unit_moves_onto_friendly_city_tile() -> void:
+func test_right_click_garrisons_friendly_city() -> void:
 	var facade = setup_facade(2121, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
 	var gs = facade.get_state()
@@ -140,18 +139,166 @@ func test_selected_unit_moves_onto_friendly_city_tile() -> void:
 	gs.map.get_tile(3, 3).terrain_id = "grassland"
 	gs.map.get_tile(4, 3).terrain_id = "grassland"
 	var mover = make_unit(gs, "warrior", pid, 3, 3)
-	make_settlement(gs, pid, 4, 3, 2)   # a friendly city on the destination
+	make_settlement(gs, pid, 4, 3, 2)   # a friendly city on the target tile
 	facade.select_unit(mover.id)
 
 	var ir = _router()
 	ir._facade = facade
-	ir._handle_selection_click(4, 3, gs)
+	ir._handle_move_click(4, 3, gs)
 	assert_eq([mover.x, mover.y], [4, 3],
-		"A selected unit garrisons a friendly city instead of selecting it")
-	assert_eq(facade.get_selection().head_city(), -1,
-		"…and the city is not selected by the move click")
+		"Right-click moves onto (garrisons) a friendly city tile")
 
-func test_clicking_selected_units_own_tile_cycles_stack() -> void:
+func test_right_click_with_nothing_selected_is_noop() -> void:
+	var facade = setup_facade(2929, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(4, 3).terrain_id = "grassland"
+	facade.clear_selection()
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_move_click(4, 3, gs)
+	assert_false(facade.get_selection().has_inspected_tile(),
+		"Right-click with nothing selected does nothing — no move, no inspect")
+
+func test_right_click_illegal_target_keeps_selection() -> void:
+	var facade = setup_facade(2626, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(3, 3).terrain_id = "grassland"
+	gs.map.get_tile(4, 3).terrain_id = "ocean"   # land unit cannot enter
+	var mover = make_unit(gs, "warrior", pid, 3, 3)
+	facade.select_unit(mover.id)
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_move_click(4, 3, gs)
+	assert_eq([mover.x, mover.y], [3, 3], "An illegal target does not move the unit")
+	assert_eq(facade.get_selection().head_unit(), mover.id,
+		"…and the selection is left intact (no accidental deselect on a misclick)")
+
+func test_left_click_friendly_unit_tile_selects_it() -> void:
+	var facade = setup_facade(2020, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var mover = make_unit(gs, "warrior", pid, 3, 3)
+	var other = make_unit(gs, "scout", pid, 4, 3)   # a friendly unit on the clicked tile
+	facade.select_unit(mover.id)
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_select_click(4, 3, gs)
+	assert_eq([mover.x, mover.y], [3, 3],
+		"Left-click never moves the selected unit")
+	assert_eq(facade.get_selection().head_unit(), other.id,
+		"…it selects the unit on the clicked tile, so you can switch targets")
+
+func test_left_click_friendly_city_tile_selects_it() -> void:
+	var facade = setup_facade(2121, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var mover = make_unit(gs, "warrior", pid, 3, 3)
+	var city = make_settlement(gs, pid, 4, 3, 2)   # a friendly city on the clicked tile
+	facade.select_unit(mover.id)
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_select_click(4, 3, gs)
+	assert_eq(facade.get_selection().head_city(), city.id,
+		"Left-clicking a friendly city while a unit is selected selects the city")
+	assert_eq([mover.x, mover.y], [3, 3], "…and the unit does not move")
+
+# ── Every tile is clickable; empty/foreign tiles show terrain + deselect ──────
+
+func test_left_click_empty_tile_with_nothing_selected_inspects_terrain() -> void:
+	var facade = setup_facade(2525, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(8, 8).terrain_id = "grassland"
+	facade.clear_selection()
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_select_click(8, 8, gs)
+	assert_true(facade.get_selection().has_inspected_tile(),
+		"Left-clicking an empty tile records it for a terrain readout")
+	assert_eq([int(facade.get_selection().inspected_tile.x),
+		int(facade.get_selection().inspected_tile.y)], [8, 8],
+		"…the inspected tile is the one clicked")
+
+func test_left_click_empty_tile_deselects_unit_and_inspects() -> void:
+	var facade = setup_facade(2424, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(3, 3).terrain_id = "grassland"
+	gs.map.get_tile(7, 7).terrain_id = "grassland"
+	var mover = make_unit(gs, "warrior", pid, 3, 3)
+	facade.select_unit(mover.id)
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_select_click(7, 7, gs)
+	assert_eq(facade.get_selection().head_unit(), -1,
+		"Left-clicking an empty tile deselects the current unit")
+	assert_true(facade.get_selection().has_inspected_tile(),
+		"…and shows that tile's terrain readout")
+	assert_eq([mover.x, mover.y], [3, 3], "…without moving the unit")
+
+# ── Bug: a city is selectable the turn it is founded, even sharing its tile ───
+
+func test_city_on_unit_tile_is_reachable_by_cycling() -> void:
+	var facade = setup_facade(2727, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var escort = make_unit(gs, "warrior", pid, 5, 5)
+	var city = make_settlement(gs, pid, 5, 5, 1)   # city shares the escort's tile
+	facade.clear_selection()
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_select_click(5, 5, gs)
+	assert_eq(facade.get_selection().head_unit(), escort.id,
+		"First click selects the unit on the tile")
+	ir._handle_select_click(5, 5, gs)
+	assert_eq(facade.get_selection().head_city(), city.id,
+		"Cycling the tile reaches the city sharing it with the unit")
+
+# ── Bug: a single member can leave a stack without dragging the rest along ────
+
+func test_move_selected_member_leaves_stack_behind() -> void:
+	var facade = setup_facade(2828, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(4, 4).terrain_id = "grassland"
+	gs.map.get_tile(5, 4).terrain_id = "grassland"
+	var mover = make_unit(gs, "warrior", pid, 4, 4)
+	var stayer = make_unit(gs, "scout", pid, 4, 4)
+	facade.select_unit(mover.id)   # just one member of the two-unit stack
+
+	var ir = _router()
+	ir._facade = facade
+	ir._handle_move_click(5, 4, gs)
+	assert_eq([mover.x, mover.y], [5, 4], "The selected member moves out (right-click)")
+	assert_eq([stayer.x, stayer.y], [4, 4],
+		"…the unselected stack member stays put")
+
+func test_left_click_selected_units_own_tile_cycles_stack() -> void:
 	var facade = setup_facade(2222, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
 	var gs = facade.get_state()
@@ -163,11 +310,11 @@ func test_clicking_selected_units_own_tile_cycles_stack() -> void:
 
 	var ir = _router()
 	ir._facade = facade
-	ir._handle_selection_click(3, 3, gs)   # same tile as the selected unit
+	ir._handle_select_click(3, 3, gs)   # same tile as the selected unit
 	assert_eq(facade.get_selection().head_unit(), b.id,
-		"Clicking the selected unit's own tile cycles to the next stack member")
+		"Left-clicking the selected unit's own tile cycles to the next stack member")
 
-func test_click_selects_friendly_unit_when_nothing_selected() -> void:
+func test_left_click_selects_friendly_unit_when_nothing_selected() -> void:
 	var facade = setup_facade(2323, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
 	var gs = facade.get_state()
@@ -178,11 +325,11 @@ func test_click_selects_friendly_unit_when_nothing_selected() -> void:
 
 	var ir = _router()
 	ir._facade = facade
-	ir._handle_selection_click(6, 6, gs)
+	ir._handle_select_click(6, 6, gs)
 	assert_eq(facade.get_selection().head_unit(), u.id,
-		"With nothing selected, clicking a friendly unit selects it")
+		"With nothing selected, left-clicking a friendly unit selects it")
 
-func test_click_selects_city_when_nothing_selected() -> void:
+func test_left_click_selects_city_when_nothing_selected() -> void:
 	var facade = setup_facade(2424, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
 	var gs = facade.get_state()
@@ -193,6 +340,6 @@ func test_click_selects_city_when_nothing_selected() -> void:
 
 	var ir = _router()
 	ir._facade = facade
-	ir._handle_selection_click(5, 5, gs)
+	ir._handle_select_click(5, 5, gs)
 	assert_eq(facade.get_selection().head_city(), c.id,
-		"With nothing selected, clicking a friendly city selects it")
+		"With nothing selected, left-clicking a friendly city selects it")

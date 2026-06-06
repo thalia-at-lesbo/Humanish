@@ -19,8 +19,13 @@ var selected_unit_ids: Array = []   # int IDs, ordered; head = [0]
 var selected_city_id: int = -1
 var city_screen_open: bool = false
 var active_city_tab: int = 0        # 0=units 1=buildings 2=wonders
+# An empty tile the player clicked to inspect (terrain readout, no subject
+# selected). Vector2(-1, -1) means "nothing being inspected". Selecting any
+# real subject clears it.
+var inspected_tile: Vector2 = Vector2(-1, -1)
 
 func select_unit(id: int, do_clear: bool = true, toggle: bool = false) -> void:
+    inspected_tile = Vector2(-1, -1)
     if do_clear:
         selected_unit_ids.clear()
         selected_city_id = -1
@@ -30,6 +35,7 @@ func select_unit(id: int, do_clear: bool = true, toggle: bool = false) -> void:
         selected_unit_ids.append(id)
 
 func select_city(id: int, raise_screen: bool = false) -> void:
+    inspected_tile = Vector2(-1, -1)
     selected_unit_ids.clear()
     selected_city_id = id
     if raise_screen:
@@ -39,6 +45,10 @@ func clear() -> void:
     selected_unit_ids.clear()
     selected_city_id = -1
     city_screen_open = false
+    inspected_tile = Vector2(-1, -1)
+
+func has_inspected_tile() -> bool:
+    return inspected_tile.x >= 0 and inspected_tile.y >= 0
 
 func head_unit() -> int:
     if selected_unit_ids.empty():

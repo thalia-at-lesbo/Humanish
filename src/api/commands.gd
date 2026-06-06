@@ -18,12 +18,15 @@ static func end_turn(player_id: int) -> Dictionary:
 	return {"type": IDs.CommandType.END_TURN, "player_id": player_id}
 
 static func move_stack(player_id: int, from_x: int, from_y: int,
-		to_x: int, to_y: int) -> Dictionary:
+		to_x: int, to_y: int, unit_ids: Array = []) -> Dictionary:
+	# unit_ids: when non-empty, move only those units off the tile (so a single
+	# member can leave a stack); when empty, the whole owned stack moves together.
 	return {
 		"type": IDs.CommandType.MOVE_STACK,
 		"player_id": player_id,
 		"from_x": from_x, "from_y": from_y,
-		"to_x": to_x, "to_y": to_y
+		"to_x": to_x, "to_y": to_y,
+		"unit_ids": unit_ids
 	}
 
 static func found_settlement(player_id: int, unit_id: int,

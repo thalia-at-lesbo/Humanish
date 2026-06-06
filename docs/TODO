@@ -25,15 +25,41 @@ starting_unit_default) and applied via DataDB.starting_units_for_techs,
 evaluated against each society's own starting_techs (now also seeded into
 the player's known techs). Documented in game-data.md §3; the old uniform
 5-unit default_starting_units list is gone.]
-- all tiles should be clickable (unoccupied tiles show terrain info 
+- all tiles should be clickable (unoccupied tiles show terrain info
 on side and deselect current unit if space is invalid move for unit).
-- city should be selectable the turn it is founded (it appears to not 
+[DONE — left-click an empty/foreign tile deselects the current unit and
+shows a terrain readout (SimFacade.inspect_tile / tile_info_text;
+SelectionState.inspected_tile; selection panel renders it). Movement is
+now right-click (see below), so left-click is purely select/inspect.]
+- city should be selectable the turn it is founded (it appears to not
 be selectable)
-- once a unit stack is selected, it doesn't seem possible to select 
-another unit or city and stack members appear inaccurate when a unit 
+[DONE — left-click cycles a tile's own subjects (units in spawn order,
+then the city), so a city sharing its tile with the founding escort is
+reachable by clicking the tile again. InputRouter._subjects_at/_next_subject.]
+- once a unit stack is selected, it doesn't seem possible to select
+another unit or city and stack members appear inaccurate when a unit
 is moved out of the stack
-- after selecting first unit to leave the stack, it doesn't appear 
+[DONE — left-click ALWAYS selects (never moves), so you can switch to any
+other unit or city while a unit is active; movement moved to right-click.
+The selection panel recomputes the on-tile stack from live state each
+rebuild, so it never shows stale members.]
+- after selecting first unit to leave the stack, it doesn't appear
 possible to move other units out of stack
+[DONE — MOVE_STACK takes an optional unit_ids subset and moves only those
+(Commands.move_stack / SimFacade._stack_movers); the per-unit MISSION_MOVE_TO
+command moves a single unit. Right-click passes the current selection, so
+each member peels off one at a time. Empty unit_ids moves the whole stack (AI).]
+
+Follow-up fixes (right-click movement + rendering artifact):
+- Movement is now RIGHT-click only; LEFT-click is select/inspect only, so a
+city or unit can again be a move *target* (right-click it) without left-click
+ambiguity. Movement is also a proper per-unit command (MISSION_MOVE_TO moves
+just its unit). InputRouter._handle_select_click / _handle_move_click.
+- "Unknown grey squares" were mountain tiles rendering as a flat grey almost
+identical to the missing-terrain placeholder. Fixed in scenes/world/world_view.gd:
+mountains/hills now draw a peak glyph (_draw_peak) and mountains use a rockier
+slate tone; DEFAULT_TERRAIN_COLOR is now glaring magenta so a genuinely unknown
+terrain id is unmistakably a bug rather than looking like a mountain.
 
 
 Major features

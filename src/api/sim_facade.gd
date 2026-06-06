@@ -351,13 +351,7 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 	var fx: int = int(cmd["from_x"]); var fy: int = int(cmd["from_y"])
 	var tx: int = int(cmd["to_x"]);   var ty: int = int(cmd["to_y"])
 
-	var all_here: Array = Stack.at(_gs.units, fx, fy, player_id)
-	# Carried units are not independent stack members; they ride with their
-	# transport via the cargo-follow logic below (§5.2).
-	var moving_units: Array = []
-	for mu in all_here:
-		if mu.transported_by < 0:
-			moving_units.append(mu)
+	var moving_units: Array = _stack_movers(fx, fy, player_id, cmd.get("unit_ids", []))
 	if moving_units.empty():
 		return false
 
@@ -433,6 +427,21 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
 	return true
+
+# The units that actually move for a MOVE_STACK at (fx, fy): owned, on the tile,
+# and not riding a transport. When unit_ids is non-empty the result is filtered
+# to that subset, so a single member can be peeled off a larger stack; the order
+# of all_here is preserved so the lead (and thus the path) stays stable.
+func _stack_movers(fx: int, fy: int, player_id: int, unit_ids) -> Array:
+	var wanted: Array = unit_ids if unit_ids != null else []
+	var out: Array = []
+	for mu in Stack.at(_gs.units, fx, fy, player_id):
+		if mu.transported_by >= 0:
+			continue
+		if not wanted.empty() and not (mu.id in wanted):
+			continue
+		out.append(mu)
+	return out
 
 func _cmd_found_settlement(cmd: Dictionary) -> bool:
 	var player_id: int = int(cmd["player_id"])
@@ -1172,12 +1181,16 @@ func _cmd_mission(cmd: Dictionary) -> bool:
 			u.has_moved = true
 			u.movement_left = 0
 		IDs.CommandType.MISSION_MOVE_TO:
+			# A per-unit move order: only this unit leaves the tile, so it can be
+			# peeled off a stack (unlike MOVE_STACK with no unit_ids, which moves
+			# the whole tile together).
 			var mc: Dictionary = {
 				"type": IDs.CommandType.MOVE_STACK,
 				"player_id": player_id,
 				"from_x": u.x, "from_y": u.y,
 				"to_x": int(cmd.get("target_x", u.x)),
-				"to_y": int(cmd.get("target_y", u.y))
+				"to_y": int(cmd.get("target_y", u.y)),
+				"unit_ids": [unit_id]
 			}
 			return _cmd_move_stack(mc)
 		IDs.CommandType.MISSION_BUILD_ROAD:
@@ -1338,6 +1351,58 @@ func clear_selection() -> void:
 	_selection.clear()
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+
+# Can the given units (or the whole owned stack, when unit_ids is empty) reach
+# (tx, ty) from (fx, fy)? True for a legal multi-turn route and for an adjacent
+# enemy tile (entering it is an attack); false for impassable / wrong-domain
+# tiles, so the host can treat an illegal click as "inspect" instead of a move.
+func can_stack_move(fx: int, fy: int, tx: int, ty: int, unit_ids: Array = []) -> bool:
+	if fx == tx and fy == ty:
+		return false
+	var movers: Array = _stack_movers(fx, fy, _gs.current_player_id, unit_ids)
+	if movers.empty():
+		return false
+	var lead: Unit = movers[0]
+	var path: Array = Pathfinding.find_path(
+		_gs.map, fx, fy, tx, ty, lead, _db, _gs.units, _gs.current_player_id)
+	return not path.empty()
+
+# Mark an empty tile as the inspected subject: clears any unit/city selection and
+# records the tile so the HUD can show a terrain readout (§UI bug: every tile is
+# clickable; an unoccupied/illegal-target click shows terrain and drops the unit).
+func inspect_tile(tx: int, ty: int) -> void:
+	_selection.clear()
+	_selection.inspected_tile = Vector2(tx, ty)
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+
+# Human-readable terrain readout for a tile (name, feature, resource, yields,
+# movement cost, defence). The rules layer owns this text so it always matches
+# the data tables (§9).
+func tile_info_text(tx: int, ty: int) -> String:
+	if _gs == null or _gs.map == null or not _gs.map.is_valid(tx, ty):
+		return ""
+	var tile: Tile = _gs.map.get_tile(tx, ty)
+	if tile == null:
+		return ""
+	var ter: Dictionary = _db.get_terrain(tile.terrain_id)
+	var lines: Array = []
+	lines.append(str(ter.get("name", tile.terrain_id.capitalize())) \
+		+ "  (" + str(tx) + ", " + str(ty) + ")")
+	if tile.feature_id != "":
+		lines.append("Feature: " + str(_db.get_feature(tile.feature_id).get("name", tile.feature_id.capitalize())))
+	if tile.resource_id != "":
+		lines.append("Resource: " + str(_db.get_resource(tile.resource_id).get("name", tile.resource_id.capitalize())))
+	if tile.improvement_id != "":
+		lines.append("Improvement: " + str(_db.get_improvement(tile.improvement_id).get("name", tile.improvement_id.capitalize())))
+	var out: Dictionary = ter.get("base_output", {})
+	lines.append("Yields: " + str(int(out.get("food", 0))) + "F " \
+		+ str(int(out.get("production", 0))) + "P " \
+		+ str(int(out.get("commerce", 0))) + "C")
+	lines.append("Move cost: " + str(int(ter.get("movement_cost", 100)) / 100) \
+		+ "   Defence: +" + str(int(ter.get("defence_bonus", 0))) + "%")
+	return PoolStringArray(lines).join("\n")
 
 func cycle_idle_units(workers_only: bool = false) -> void:
 	var idle: Array = []

@@ -63,37 +63,48 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 				_facade.exit_interface_mode()
 			return
 
-		_handle_selection_click(tx, ty, gs)
+		_handle_select_click(tx, ty, gs)
 
 	elif event.button_index == BUTTON_RIGHT:
-		_show_flyout_menu(tx, ty, event.position)
+		_handle_move_click(tx, ty, gs)
 
-# Left-click in selection mode. Priority:
-#   1. If a unit is selected and the click is a *different* tile → move there.
-#      The destination may hold a friendly city/stack (garrison or stack up) or
-#      an enemy (attack); movement wins over re-selecting whatever is on the
-#      target tile, so friendly-occupied tiles are valid destinations.
-#   2. Otherwise (nothing selected, or clicking the selected unit's own tile) →
-#      select/cycle the units on the tile, else select a city on the tile.
-# To switch selection while a unit is active, click its own tile to cycle the
-# stack, use the next-unit control, or the selection panel's stack list.
-func _handle_selection_click(tx: int, ty: int, gs) -> void:
-	var head_uid: int = _facade.get_selection().head_unit()
-	var head_unit = gs.get_unit(head_uid) if head_uid >= 0 else null
-
-	if head_unit != null and (head_unit.x != tx or head_unit.y != ty):
-		_facade.apply_command(
-			Commands.move_stack(gs.current_player_id, head_unit.x, head_unit.y, tx, ty))
-		_maybe_auto_advance(gs)
+# Left-click = SELECT ONLY (never moves), so targeting is never ambiguous:
+#   • A tile carrying the player's own subject(s) → select / cycle them: units in
+#     spawn order, then the city on the tile. This switches to another unit or to
+#     a city (incl. a just-founded one sharing its tile with the founding escort)
+#     at any time, and cycles a stack on repeated clicks of the same tile.
+#   • Any other tile (empty, or holding only foreign subjects) → deselect the
+#     current unit and show that tile's terrain readout. Every tile is clickable.
+func _handle_select_click(tx: int, ty: int, gs) -> void:
+	var sel = _facade.get_selection()
+	var subjects: Array = _subjects_at(tx, ty, gs)
+	if not subjects.empty():
+		_select_subject(_next_subject(subjects, sel))
 		return
+	_facade.inspect_tile(tx, ty)
 
-	var owned_ids: Array = _owned_units_at(tx, ty, gs)
-	if not owned_ids.empty():
-		_facade.select_unit(_next_in_stack(owned_ids, head_uid))
+# Right-click = MOVE the selected units to the target tile (the unambiguous move
+# gesture). The destination may be empty (move), hold an enemy (attack), or hold
+# a friendly unit/city (stack up / garrison) — any legal tile is accepted. An
+# illegal target (impassable / wrong domain) is ignored, leaving the selection
+# intact. With nothing selected there is nothing to move, so it is a no-op.
+func _handle_move_click(tx: int, ty: int, gs) -> void:
+	var sel = _facade.get_selection()
+	var ids: Array = sel.selected_unit_ids
+	if ids.empty():
 		return
-	var clicked_city_id: int = _find_owned_city_at(tx, ty, gs)
-	if clicked_city_id >= 0:
-		_facade.select_city(clicked_city_id)
+	var head = gs.get_unit(sel.head_unit())
+	if head == null or (head.x == tx and head.y == ty):
+		return
+	if not _facade.can_stack_move(head.x, head.y, tx, ty, ids):
+		return
+	if ids.size() == 1:
+		# A single selected unit moves as a per-unit move command (§3.3).
+		_facade.apply_command(Commands.mission_move_to(gs.current_player_id, ids[0], tx, ty))
+	else:
+		_facade.apply_command(Commands.move_stack(
+			gs.current_player_id, head.x, head.y, tx, ty, ids))
+	_maybe_auto_advance(gs)
 
 func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 	if _tooltip_label == null:
@@ -156,40 +167,6 @@ func _dispatch_targeting_mode(mode: int, tx: int, ty: int) -> void:
 			_facade.apply_command(
 				Commands.mission_bombard(gs.current_player_id, head_uid, tx, ty))
 
-func _show_flyout_menu(tx: int, ty: int, screen_pos: Vector2) -> void:
-	var items: Array = _facade.get_flyout_menu(tx, ty)
-	if items.empty():
-		return
-	var popup: PopupMenu = PopupMenu.new()
-	add_child(popup)
-	for i in range(items.size()):
-		popup.add_item(str(items[i].get("label", "?")), i)
-	popup.connect("id_pressed", self, "_on_flyout_item", [items, tx, ty])
-	popup.popup(Rect2(screen_pos, Vector2.ZERO))
-
-func _on_flyout_item(id: int, items: Array, tx: int, ty: int) -> void:
-	if id < 0 or id >= items.size():
-		return
-	var item: Dictionary = items[id]
-	var gs = _facade.get_state()
-	var pid: int = gs.current_player_id
-	var sel = _facade.get_selection()
-	var uid: int = sel.head_unit()
-	var aid: int = int(item.get("action_id", -1))
-
-	if aid == IDs.UnitMission.FOUND_SETTLEMENT:
-		var settler_id: int = int(item.get("unit_id", uid))
-		if settler_id >= 0:
-			_facade.apply_command(Commands.found_settlement(pid, settler_id))
-	elif aid == IDs.UnitCmd.FORTIFY and uid >= 0:
-		_facade.apply_command(Commands.unit_fortify(pid, uid))
-		_maybe_auto_advance(gs)
-	elif aid == IDs.UnitCmd.WAKE and uid >= 0:
-		_facade.apply_command(Commands.mission_skip_turn(pid, uid))
-		_maybe_auto_advance(gs)
-	elif aid == IDs.ControlType.OPEN_CITY_SCREEN:
-		_facade.apply_command(Commands.do_control(pid, IDs.ControlType.OPEN_CITY_SCREEN))
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # If the active unit can no longer act, hop to the next idle unit. Mirrors the
@@ -225,6 +202,40 @@ func _next_in_stack(ids: Array, head_uid: int) -> int:
 	if idx < 0:
 		return ids[0]
 	return ids[(idx + 1) % ids.size()]
+
+# The player's own selectable subjects on a tile, in click-cycle order: every
+# owned unit (stable spawn order) followed by an owned city if one sits here.
+# Each entry is {"kind": "unit"|"city", "id": int}.
+func _subjects_at(tx: int, ty: int, gs) -> Array:
+	var out: Array = []
+	for uid in _owned_units_at(tx, ty, gs):
+		out.append({"kind": "unit", "id": uid})
+	var cid: int = _find_owned_city_at(tx, ty, gs)
+	if cid >= 0:
+		out.append({"kind": "city", "id": cid})
+	return out
+
+# The subject after whatever is currently selected, wrapping around. If nothing
+# on this tile is selected, returns the first subject.
+func _next_subject(subjects: Array, sel) -> Dictionary:
+	var hu: int = sel.head_unit()
+	var hc: int = sel.head_city()
+	var cur: int = -1
+	for i in range(subjects.size()):
+		var s: Dictionary = subjects[i]
+		if s["kind"] == "unit" and s["id"] == hu:
+			cur = i
+			break
+		if s["kind"] == "city" and s["id"] == hc:
+			cur = i
+			break
+	return subjects[(cur + 1) % subjects.size()]
+
+func _select_subject(subject: Dictionary) -> void:
+	if subject["kind"] == "unit":
+		_facade.select_unit(int(subject["id"]))
+	else:
+		_facade.select_city(int(subject["id"]))
 
 func _find_owned_city_at(tx: int, ty: int, gs) -> int:
 	for s in gs.settlements:

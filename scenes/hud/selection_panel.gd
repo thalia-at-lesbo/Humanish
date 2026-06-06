@@ -34,6 +34,8 @@ func rebuild() -> void:
 		_build_unit_panel(head_uid, gs)
 	elif head_cid >= 0:
 		_build_city_panel(head_cid, gs)
+	elif sel.has_inspected_tile():
+		_build_tile_panel(int(sel.inspected_tile.x), int(sel.inspected_tile.y))
 
 func _build_unit_panel(unit_id: int, gs) -> void:
 	var u = gs.get_unit(unit_id)
@@ -111,6 +113,15 @@ func _build_city_panel(city_id: int, gs) -> void:
 	city_btn.text = "Open City"
 	city_btn.connect("pressed", self, "_on_open_city", [city_id])
 	add_child(city_btn)
+
+# Terrain readout for an inspected (unoccupied / illegal-target) tile.
+func _build_tile_panel(tx: int, ty: int) -> void:
+	var text: String = _facade.tile_info_text(tx, ty)
+	if text == "":
+		return
+	var lbl: Label = Label.new()
+	lbl.text = text
+	add_child(lbl)
 
 func _on_action_pressed(item: Dictionary) -> void:
 	# Map flyout item to a command. When a whole stack is selected, per-unit

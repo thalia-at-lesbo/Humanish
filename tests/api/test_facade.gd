@@ -120,3 +120,75 @@ func test_friendly_units_may_stack_on_one_tile() -> void:
 	assert_eq([gs.get_unit(b.id).x, gs.get_unit(b.id).y], [5, 5],
 		"The moving unit ends up on the shared tile")
 	assert_eq(Stack.at(gs.units, 5, 5, pid).size(), 2, "Both friendly units now occupy the same tile")
+
+# ── move_stack unit_ids subset: peel a single member off a stack ──────────────
+
+func test_move_stack_moves_only_listed_units() -> void:
+	var facade = setup_facade(135, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var a = make_unit(gs, "warrior", pid, 4, 4)
+	var b = make_unit(gs, "scout", pid, 4, 4)
+	assert_true(facade.apply_command(Commands.move_stack(pid, 4, 4, 5, 4, [a.id])),
+		"Moving a single listed member should succeed")
+	assert_eq([gs.get_unit(a.id).x, gs.get_unit(a.id).y], [5, 4], "The listed unit moves")
+	assert_eq([gs.get_unit(b.id).x, gs.get_unit(b.id).y], [4, 4],
+		"The unlisted stack member stays behind")
+
+func test_can_stack_move_true_for_open_tile_false_for_water() -> void:
+	var facade = setup_facade(136, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.map.get_tile(4, 4).terrain_id = "grassland"
+	gs.map.get_tile(5, 4).terrain_id = "grassland"
+	gs.map.get_tile(4, 5).terrain_id = "ocean"
+	make_unit(gs, "warrior", pid, 4, 4)
+	assert_true(facade.can_stack_move(4, 4, 5, 4),
+		"An adjacent open land tile is a legal destination for a land unit")
+	assert_false(facade.can_stack_move(4, 4, 4, 5),
+		"Water is not a legal destination for a land unit")
+
+func test_inspect_tile_clears_selection_and_records_tile() -> void:
+	var facade = setup_facade(137, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = make_unit(gs, "warrior", pid, 4, 4)
+	facade.select_unit(u.id)
+	facade.inspect_tile(7, 7)
+	assert_eq(facade.get_selection().head_unit(), -1, "Inspecting a tile clears the unit selection")
+	assert_true(facade.get_selection().has_inspected_tile(), "…and records the inspected tile")
+
+func test_tile_info_text_reports_terrain() -> void:
+	var facade = setup_facade(138, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	gs.map.get_tile(3, 3).terrain_id = "grassland"
+	var text = facade.tile_info_text(3, 3)
+	assert_true(text.find("Grassland") >= 0, "Tile info names the terrain")
+	assert_true(text.find("Yields") >= 0, "Tile info lists yields")
+
+func test_mission_move_to_is_per_unit() -> void:
+	# MISSION_MOVE_TO is a per-unit move command: only the named unit leaves a
+	# shared tile, so it can be peeled off a stack.
+	var facade = setup_facade(139, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var a = make_unit(gs, "warrior", pid, 4, 4)
+	var b = make_unit(gs, "scout", pid, 4, 4)
+	assert_true(facade.apply_command(Commands.mission_move_to(pid, a.id, 5, 4)),
+		"A per-unit move order should succeed")
+	assert_eq([gs.get_unit(a.id).x, gs.get_unit(a.id).y], [5, 4], "The ordered unit moves")
+	assert_eq([gs.get_unit(b.id).x, gs.get_unit(b.id).y], [4, 4],
+		"…the rest of the stack stays behind")
