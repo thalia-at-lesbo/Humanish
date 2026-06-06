@@ -178,6 +178,13 @@ func _handle_hello(peer_id: int, d: Dictionary) -> void:
 		"players": _player_summaries(),
 	})
 	print("[net] peer ", peer_id, " joined as player ", slot)
+	# Bootstrap: every joiner needs a snapshot to build its world and actually
+	# start the game, even when it is not its turn yet. _drive() only pushes state
+	# to the *active* player, so a client joining on someone else's turn would
+	# otherwise get only a WAIT frame and never leave the lobby. Send it the
+	# current state here (inactive); _drive() then handles the active player.
+	if slot != _facade.get_state().current_player_id:
+		_send_state(peer_id, false)
 	_drive()
 
 func _handle_submit(peer_id: int, d: Dictionary) -> void:

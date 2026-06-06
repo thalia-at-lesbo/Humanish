@@ -31,6 +31,7 @@ var _setup_screen        # SetupScreen instance during new-game config
 var _server              # running NetServer (null until started)
 var _facade              # authoritative facade (kept for the status display)
 var _server_port: int = 9080
+var _server_name: String = ""   # captured before the config widgets are freed
 var _status_accum: float = 0.0
 
 # Config-phase widgets
@@ -175,7 +176,10 @@ func _list_saves() -> Array:
 
 func _on_facade_ready(facade, db) -> void:
 	_facade = facade
+	# Capture the config-field values into plain vars now: the status panel reads
+	# them every refresh, but the LineEdits are freed with _config_box below.
 	_server_port = int(_port_edit.text) if _port_edit.text.is_valid_integer() else 9080
+	_server_name = str(_name_edit.text)
 	var save_name: String = str(_save_edit.text).strip_edges()
 	if save_name == "":
 		save_name = DEFAULT_SAVE
@@ -185,7 +189,7 @@ func _on_facade_ready(facade, db) -> void:
 		_setup_screen = null
 
 	_server = NetServer.new()
-	_server.init(facade, db, str(_name_edit.text))
+	_server.init(facade, db, _server_name)
 	_server.set_save_path(save_name)
 	if _server.listen(_server_port) != OK:
 		_server = null
@@ -239,7 +243,7 @@ func _refresh_status() -> void:
 		return
 	var gs = _facade.get_state()
 	var lines: Array = []
-	lines.append("Name: " + str(_name_edit.text))
+	lines.append("Name: " + _server_name)
 	lines.append("Listening on port " + str(_server_port))
 	lines.append("Autosaving to: " + _server.get_save_path())
 	lines.append("Turn: " + str(gs.turn_number))
