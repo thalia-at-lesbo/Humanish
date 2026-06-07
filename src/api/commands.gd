@@ -288,6 +288,15 @@ static func espionage_mission(player_id: int, target_alliance_id: int,
 		"mission": mission
 	}
 
+# Cast a vote on the open diplomatic-assembly proposal (§7.2). choice is one of
+# "yea", "nay", or "abstain".
+static func cast_vote(player_id: int, choice: String) -> Dictionary:
+	return {
+		"type": IDs.CommandType.CAST_VOTE,
+		"player_id": player_id,
+		"choice": choice
+	}
+
 static func set_subordination(player_id: int, overlord_alliance_id: int) -> Dictionary:
 	return {
 		"type": IDs.CommandType.SET_SUBORDINATION,

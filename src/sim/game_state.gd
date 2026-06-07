@@ -45,8 +45,22 @@ var endgame_project_stages: Dictionary = {}  # alliance_id -> int
 
 # Diplomatic assembly tally: votes cast for each alliance's candidate.
 # Populated by the assembly/voting phase (§3 world-step 7); read by the
-# diplomatic win condition (§10). Empty until assemblies are implemented.
+# diplomatic win condition (§10).
 var diplomatic_votes: Dictionary = {}  # alliance_id -> int votes
+
+# Diplomatic assembly state (§7.2, provisional). Empty until a founding wonder
+# (Apostolic Palace / United Nations) creates an assembly. Once active:
+#   {kind, belief_id, resident_player_id, last_session_turn,
+#    standing: {<effect>: payload}, pending: {resolution_id, candidate_player_id,
+#    target_alliance_id, belief_id, text, votes:{<pid>:"yea"/"nay"/"abstain"}}}
+# Managed by the Assembly module; serialized so a session in progress survives
+# save/load and stays on the determinism gate.
+var assembly: Dictionary = {}
+
+# Transient assembly records (session opened / resolution resolved) produced by
+# the Assembly module during the world step, drained by SimFacade into
+# notifications + the assembly_event signal. Not serialized.
+var pending_assembly_events: Array = []  # [{kind, ...payload}]
 
 # Transient cultural-flip records produced by the §4.9 revolt phase during a
 # player step, drained by SimFacade into notifications + the city_flipped signal.
@@ -182,6 +196,7 @@ func serialize() -> Dictionary:
 		"founded_econ_orgs": founded_econ_orgs.duplicate(),
 		"endgame_project_stages": endgame_project_stages.duplicate(),
 		"diplomatic_votes": diplomatic_votes.duplicate(),
+		"assembly": assembly.duplicate(true),
 		"_next_unit_id": _next_unit_id,
 		"_next_settlement_id": _next_settlement_id,
 		"_next_alliance_id": _next_alliance_id,
@@ -215,6 +230,7 @@ static func deserialize(d: Dictionary, db_ref):
 	gs.founded_econ_orgs = d.get("founded_econ_orgs", {}).duplicate()
 	gs.endgame_project_stages = d.get("endgame_project_stages", {}).duplicate()
 	gs.diplomatic_votes = d.get("diplomatic_votes", {}).duplicate()
+	gs.assembly = d.get("assembly", {}).duplicate(true)
 	gs._next_unit_id = int(d.get("_next_unit_id", 1))
 	gs._next_settlement_id = int(d.get("_next_settlement_id", 1))
 	gs._next_alliance_id = int(d.get("_next_alliance_id", 1))

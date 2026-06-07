@@ -1,0 +1,85 @@
+{
+  "_comment": "PROVISIONAL (game-data.md §18). Diplomatic-assembly elections and resolutions. 'kind' is 'election' (choose a leader/candidate) or 'resolution' (binding empire-wide effect). 'body' gates which assembly may put it forward: 'any', 'religious' (Apostolic Palace), or 'secular' (United Nations). 'effect' is dispatched by Assembly.apply_effect; 'pass_share' overrides the constant resolution_pass_share. 'text' is the proposal flavour read out at the session; tokens {proposer} {candidate} {target} {belief} are substituted at runtime. All values are placeholders to be balanced.",
+
+  "elect_resident": {
+    "id": "elect_resident",
+    "name": "Election of the Resident",
+    "kind": "election",
+    "body": "any",
+    "effect": "elect_resident",
+    "text": "The assembly convenes to choose who shall preside over its deliberations. {candidate} stands for the office and will set the agenda of every future session. Members, cast your votes: shall {candidate} take up the gavel?"
+  },
+
+  "diplomatic_victory": {
+    "id": "diplomatic_victory",
+    "name": "Resolution of Supreme Leadership",
+    "kind": "election",
+    "body": "any",
+    "effect": "diplomatic_victory",
+    "pass_share": 67,
+    "text": "A motion is laid before the assembly to recognise {candidate} as the foremost power of the age. Should two-thirds of the chamber assent, the world will bend to {candidate}'s leadership and the long contest of nations will be settled by acclamation rather than the sword."
+  },
+
+  "force_peace": {
+    "id": "force_peace",
+    "name": "Resolution for Universal Peace",
+    "kind": "resolution",
+    "body": "any",
+    "effect": "force_peace",
+    "text": "The assembly, weary of bloodshed, moves that all wars now raging be brought to an immediate close. If carried, every member shall lay down arms and the guns shall fall silent across the world. Do you vote for peace?"
+  },
+
+  "trade_embargo": {
+    "id": "trade_embargo",
+    "name": "Resolution of Economic Sanction",
+    "kind": "resolution",
+    "body": "any",
+    "effect": "trade_embargo",
+    "text": "It is proposed that the assembly close its markets to {target}, severing them from the commerce of nations until they amend their conduct. No member shall trade with the sanctioned power while this resolution stands. How do you vote?"
+  },
+
+  "civic_mandate": {
+    "id": "civic_mandate",
+    "name": "Resolution on Common Governance",
+    "kind": "resolution",
+    "body": "any",
+    "effect": "civic_mandate",
+    "text": "The assembly proposes that all members align their institutions, adopting a common civic for the good order of the world. Those who defy the mandate will answer to their own restless citizens. Shall the assembly bind its members to this course?"
+  },
+
+  "religion_mandate": {
+    "id": "religion_mandate",
+    "name": "Resolution on the One Faith",
+    "kind": "resolution",
+    "body": "religious",
+    "effect": "religion_mandate",
+    "text": "Let it be resolved that {belief} be proclaimed the state faith of every member that harbours its temples. The assembly would unite the faithful under a single banner. Do you affirm the One Faith?"
+  },
+
+  "free_religion_spread": {
+    "id": "free_religion_spread",
+    "name": "Resolution of Open Worship",
+    "kind": "resolution",
+    "body": "religious",
+    "effect": "free_religion_spread",
+    "text": "The assembly proposes that no member may bar a faith from crossing its borders; all creeds shall spread freely among the nations. Do you vote to throw open the doors of every temple?"
+  },
+
+  "no_nuclear": {
+    "id": "no_nuclear",
+    "name": "Resolution on Non-Proliferation",
+    "kind": "resolution",
+    "body": "secular",
+    "effect": "no_nuclear",
+    "text": "Mindful of the fire that could unmake the world, the assembly moves to forbid the building and keeping of atomic arms by any member. Shall the nations forswear the bomb?"
+  },
+
+  "resident_aid": {
+    "id": "resident_aid",
+    "name": "Resolution of Tribute to the Resident",
+    "kind": "resolution",
+    "body": "any",
+    "effect": "resident_aid",
+    "text": "The assembly proposes a grant from the common purse to {candidate}, presiding resident, that the office may carry out its charge. Do you approve the disbursement?"
+  }
+}

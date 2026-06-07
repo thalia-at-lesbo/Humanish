@@ -232,7 +232,7 @@ Implements §3 as three static functions called in sequence. Every phase first c
 4. Spawn wild/raider forces (`WildForces`)
 5. Environmental degradation (`Pollution`)
 6. Assign special sites (stub)
-7. Assembly/voting (`_resolve_assembly` — tallies population-weighted `gs.diplomatic_votes` per alliance)
+7. Assembly/voting (`_resolve_assembly` — tallies population-weighted `gs.diplomatic_votes` per alliance — then `Assembly.world_tick` runs the §7.2 world-assembly lifecycle: sessions, resident elections, resolutions; gated on a built Apostolic Palace / United Nations)
 8. Increment `turn_number`
 9. Advance `current_player_id`
 10. Check win conditions (`WinConditions`)

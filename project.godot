@@ -15,6 +15,11 @@ _global_script_classes=[ {
 "path": "res://src/sim/alliance.gd"
 }, {
 "base": "Reference",
+"class": "Assembly",
+"language": "GDScript",
+"path": "res://src/sim/assembly.gd"
+}, {
+"base": "Reference",
 "class": "DebugConsole",
 "language": "GDScript",
 "path": "res://src/api/debug_console.gd"
@@ -246,6 +251,7 @@ _global_script_classes=[ {
 } ]
 _global_script_class_icons={
 "Alliance": "",
+"Assembly": "",
 "Beliefs": "",
 "DebugConsole": "",
 "DebugLog": "",

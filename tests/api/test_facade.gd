@@ -293,3 +293,90 @@ func test_mission_move_to_is_per_unit() -> void:
 	assert_eq([gs.get_unit(a.id).x, gs.get_unit(a.id).y], [5, 4], "The ordered unit moves")
 	assert_eq([gs.get_unit(b.id).x, gs.get_unit(b.id).y], [4, 4],
 		"…the rest of the stack stays behind")
+
+# ── Diplomatic assembly voting (§7.2) ──────────────────────────────────────────
+
+# A bare facade over a religious assembly with an open session: player 1 founds the
+# Apostolic Palace in a christian capital, players 1–3 all hold christian cities.
+func _assembly_facade():
+	var gs = make_gs(3)
+	var c1 = make_settlement(gs, 1, 3, 3, 5)
+	c1.belief_id = "christianity"
+	c1.structures.append("apostolic_palace")
+	var c2 = make_settlement(gs, 2, 8, 8, 3); c2.belief_id = "christianity"
+	var c3 = make_settlement(gs, 3, 14, 14, 2); c3.belief_id = "christianity"
+	var f = bare_facade(gs)
+	f._hooks = hooks()
+	gs.turn_number = 12
+	Assembly.world_tick(gs, gs.rng)   # open the first session
+	return f
+
+func test_cast_vote_command_records_a_vote() -> void:
+	var facade = _assembly_facade()
+	facade.get_state().current_player_id = 1   # a player votes on their own turn
+	assert_true(facade.apply_command(Commands.cast_vote(1, "yea")),
+		"A member's vote command is accepted")
+	assert_true(Assembly.has_voted(facade.get_state(), 1), "…and is recorded")
+
+func test_cast_vote_rejected_for_non_member() -> void:
+	var gs = make_gs(2)
+	var c1 = make_settlement(gs, 1, 3, 3, 4)
+	c1.belief_id = "christianity"
+	c1.structures.append("apostolic_palace")
+	make_settlement(gs, 2, 8, 8, 4)  # player 2 holds no christian city
+	var facade = bare_facade(gs)
+	facade._hooks = hooks()
+	gs.turn_number = 12
+	Assembly.world_tick(gs, gs.rng)
+	gs.current_player_id = 2   # it IS player 2's turn — rejection is on membership
+	assert_false(facade.apply_command(Commands.cast_vote(2, "yea")),
+		"A non-member's vote command is rejected")
+
+func test_get_pending_vote_reports_then_clears() -> void:
+	var facade = _assembly_facade()
+	facade.get_state().current_player_id = 2
+	var ballot = facade.get_pending_vote(2)
+	assert_eq(str(ballot.get("resolution_id", "")), "elect_resident",
+		"A member sees the open proposal")
+	facade.apply_command(Commands.cast_vote(2, "abstain"))
+	assert_true(facade.get_pending_vote(2).empty(),
+		"Once voted, the member has no pending ballot")
+
+func test_human_turn_raises_election_popup() -> void:
+	var facade = _assembly_facade()
+	# Player 2 defaults to human (is_ai == false): opening their turn raises the ballot.
+	facade._maybe_raise_vote_popup(2)
+	var popup = facade.get_pending_popup()
+	assert_eq(int(popup.get("type", -1)), IDs.PopupType.CHOOSE_ELECTION,
+		"An unvoted human member is shown the election popup")
+
+func test_ai_member_votes_during_its_turn() -> void:
+	var facade = _assembly_facade()
+	var gs = facade.get_state()
+	gs.get_player(2).is_ai = true
+	gs.current_player_id = 2
+	PlayerAI.manage_assembly(facade, 2)
+	assert_true(Assembly.has_voted(gs, 2), "The AI casts its assembly vote")
+
+func test_end_turn_loop_runs_assembly_sessions() -> void:
+	# Drive the real end-turn pipeline with a founding wonder present: the world
+	# step must establish the body, open a session on the cadence, and resolve it,
+	# surfacing an assembly notification — all without error.
+	var gs = make_gs(2)
+	var c1 = make_settlement(gs, 1, 3, 3, 5); c1.belief_id = "christianity"
+	c1.structures.append("united_nations")
+	make_settlement(gs, 2, 8, 8, 3)
+	var facade = bare_facade(gs)
+	facade._hooks = hooks()
+	var saw_event = [false]
+	facade.connect("assembly_event", self, "_on_assembly_event", [saw_event])
+	var interval = gs.db.get_constant("assembly_session_interval", 12)
+	run_turns(facade, interval + 3)
+	assert_eq(str(gs.assembly.get("kind", "")), "secular",
+		"The end-turn loop establishes the secular assembly")
+	assert_true(int(gs.assembly.get("last_session_turn", -1)) >= 0,
+		"A session opened during the run")
+	assert_true(saw_event[0], "An assembly_event signal fired through the drain")
+
+func _on_assembly_event(_e, flag) -> void:
+	flag[0] = true

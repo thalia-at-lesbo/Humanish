@@ -83,7 +83,9 @@ enum CommandType {
     # City conquest (§4.8): voluntarily disband/raze an owned city.
     DISBAND_CITY = 47,
     # State religion (§8): adopt/switch the player's empire-wide religion ("" = none).
-    SET_STATE_RELIGION = 48
+    SET_STATE_RELIGION = 48,
+    # Diplomatic assembly vote (§7.2): cast Yea/Nay/Abstain on the open proposal.
+    CAST_VOTE = 49
 }
 
 # Win condition types

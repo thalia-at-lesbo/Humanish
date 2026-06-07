@@ -53,9 +53,12 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	if not hooks.run(IDs.Phase.WORLD_ASSIGN_SITES, gs):
 		pass
 
-	# 7. Resolve assembly/voting bodies
+	# 7. Resolve assembly/voting bodies: the population poll that feeds the
+	#    diplomatic standing (§10), then the §7.2 world-assembly lifecycle
+	#    (sessions, elections, resolutions) — gated on a founding wonder.
 	if not hooks.run(IDs.Phase.WORLD_ASSEMBLY, gs):
 		_resolve_assembly(gs)
+		Assembly.world_tick(gs, gs.rng)
 
 	# 8. Increment turn counter
 	if not hooks.run(IDs.Phase.WORLD_INCREMENT_TURN, gs):

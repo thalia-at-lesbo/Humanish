@@ -1237,3 +1237,88 @@ All parts require Apollo Program national wonder. Parts must be built in cities 
 | SS Life Support | Ecology | — | 400 | 1 |
 | SS Stasis Chamber | Genetics | — | 300 | 1 |
 | SS Thrusters | Superconductors | — | 250 | 2 |
+
+---
+
+## 18. Diplomatic Assemblies & Resolutions (provisional)
+
+> **⚠️ Provisional — newly implemented, not verified.** This section is the data companion to
+> `game-rules.md` §7.2 (world assemblies, elections & resolutions), now wired through the
+> `Assembly` module (`src/sim/assembly.gd`) and the catalogue in **`data/resolutions.json`**.
+> The founding wonders, offices, vote-weight rules, resolution catalogue (including its **flavour
+> text**), and constants below are **unverified placeholders** to be checked against the
+> reference game and balance-tested. Effects are **partly wired, partly recorded-only** (the
+> "Effect" column notes which). All values are integer math.
+
+### 18.1 Founding Wonders
+
+Each assembly is founded by a world wonder; `Assembly.active_body` returns the secular body when
+any city holds the United Nations, else the religious body when any city holds the Apostolic
+Palace, else **none** (razing the wonder dissolves the assembly).
+
+| Wonder | Era | Tech Req | Cost | Assembly | Effect flag (in `structures.json`) | Office title |
+|--------|-----|----------|------|----------|-------------------------------------|--------------|
+| Apostolic Palace | Medieval | Theology | 400 | Religious | `religious_assembly` | Pope (resident) |
+| United Nations | Modern | Mass Media | 1000 | Secular | `un_elections` | Secretary-General (resident) |
+
+* The **religious assembly** organises around the belief of the city holding the Apostolic
+  Palace (§9); the secular **United Nations** organises around all players and **supersedes** it.
+* The United Nations **guarantees voting eligibility** so every non-eliminated player is a secular
+  member.
+
+### 18.2 Vote Weight
+
+| Assembly | Per-member vote weight | Eligibility |
+|----------|------------------------|-------------|
+| Religious | population of the member's cities **holding the assembly's belief** | any player with ≥1 such city |
+| Secular | total governed population | every non-eliminated player |
+
+*The legacy `_resolve_assembly` population poll (raw total population per alliance → the §16
+Diplomatic standing) still runs alongside, unchanged. Met-contact filtering of secular membership
+(§7) is **not yet** applied — provisional.*
+
+### 18.3 Resolution Catalogue
+
+`data/resolutions.json` holds the catalogue. Each entry has `id`, `name`, `kind`
+(`election`/`resolution`), `body` (`any`/`religious`/`secular` — which assembly may put it
+forward), `effect` (dispatched by `Assembly.apply_effect`), an optional `pass_share` override,
+and **`text`** — the proposal flavour read out at the session, with `{candidate}` `{proposer}`
+`{target}` `{belief}` tokens substituted at runtime. A session presents **one** proposal, voted
+**Yea / Nay / Abstain** by weight; it passes when the Yea share of the chamber's total weight
+reaches `pass_share` (or the constant `resolution_pass_share`).
+
+| Resolution | Kind | Body | Effect | Status |
+|------------|------|------|--------|--------|
+| Election of the Resident | election | any | Seat the presiding resident (front-runner candidate). | **wired** |
+| Resolution of Supreme Leadership | election | any | Candidate's alliance **wins** (§16) — needs `pass_share` 67 and the Diplomatic win enabled. | **wired** |
+| Resolution for Universal Peace | resolution | any | Global cease-fire: clears all wars and war-fatigue. | **wired** |
+| Resolution of Economic Sanction | resolution | any | Embargo the target alliance (blocked from proposing/receiving trades, §7). | wired (trade block) |
+| Resolution on Common Governance | resolution | any | Members adopt the resident's government civic where tech allows (§8). | **wired** |
+| Resolution on the One Faith | resolution | religious | Members harbouring the belief adopt it as **state religion** (§8.1), no anarchy. | **wired** |
+| Resolution of Open Worship | resolution | religious | Suspend state-religion spread blocks among members. | recorded only |
+| Resolution on Non-Proliferation | resolution | secular | Forbid building/keeping nuclear units. | recorded only |
+| Resolution of Tribute to the Resident | resolution | any | Grant the resident `resident_aid_gold`. | **wired** |
+
+*"Recorded only" effects are stored on `gs.assembly.standing` but their full enforcement awaits
+the relevant subsystems (free belief spread; nuclear units). The §4.5 "defiance of assembly
+rulings" anger is not yet wired to the contentment model.*
+
+### 18.4 Constants (in `data/constants.json`)
+
+| Key | Value | Meaning |
+|-----|-------|---------|
+| `assembly_session_interval` | 12 | Turns between assembly sessions. |
+| `resolution_pass_share` | 50 | Default Yea share of total chamber weight needed to pass (percent). |
+| `resident_aid_gold` | 100 | Gold granted to the resident by the tribute resolution. |
+| `assembly_defiance_anger` | 1 | Anger per turn for defying a ruling (constant present; **not yet** read). |
+| `vote_share_required` | 67 | Share for the Supreme-Leadership election and the legacy Diplomatic standing (in `data/win_conditions.json`; mirrored as the resolution's `pass_share`). |
+
+### 18.5 Engine touchpoints
+
+`gs.assembly` (serialized) holds `{kind, belief_id, resident_player_id, last_session_turn,
+standing, pending:{resolution_id, candidate_player_id, target_alliance_id, belief_id, pass_share,
+text, votes}}`; `gs.pending_assembly_events` is the transient queue drained by the facade.
+`Assembly.world_tick` (called from `TurnEngine.world_step` §3.7) opens/resolves sessions; the
+`CAST_VOTE` command (`Commands.cast_vote` → `SimFacade._cmd_cast_vote` → `Assembly.cast_vote`)
+records a vote; humans are prompted via the `CHOOSE_ELECTION` popup; computer players vote in
+`PlayerAI.manage_assembly` (`Assembly.ai_vote`); and `assembly_event` is the facade signal.

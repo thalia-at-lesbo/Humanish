@@ -28,6 +28,7 @@ signal era_advanced(player_id, from_era, to_era)         # §1
 signal combat_resolved(result_dict)
 signal player_turn_started(player_id)
 signal screen_requested(screen_id)
+signal assembly_event(event_dict)   # §7.2 session opened / resolution resolved
 
 var _gs: GameState
 var _hooks: Hooks
@@ -210,6 +211,31 @@ func get_player_era(player_id: int) -> Dictionary:
 	var idx: int = Eras.player_era(p, _db)
 	return {"index": idx, "id": Eras.era_id(idx, _db), "name": Eras.era_name(idx, _db)}
 
+# ── Diplomatic assembly (§7.2) ────────────────────────────────────────────────
+
+# The full assembly record ({} when no founding wonder exists). Read-only.
+func get_assembly_state() -> Dictionary:
+	return _gs.assembly
+
+# The proposal a player still owes a vote on, as {resolution_id, name, text}, or {}
+# when there is no open session, the player is not a member, or they have voted.
+func get_pending_vote(player_id: int) -> Dictionary:
+	var p: Player = _gs.get_player(player_id)
+	if p == null or not Assembly.has_open_session(_gs) or Assembly.has_voted(_gs, player_id):
+		return {}
+	if not Assembly.is_member(_gs, p, str(_gs.assembly.get("kind", ""))):
+		return {}
+	var pending: Dictionary = Assembly.pending_proposal(_gs)
+	return {
+		"resolution_id": str(pending.get("resolution_id", "")),
+		"name": str(pending.get("name", "")),
+		"text": str(pending.get("text", ""))
+	}
+
+# Convenience wrapper used by screens/AI: cast a vote through the command path.
+func cast_assembly_vote(player_id: int, choice: String) -> bool:
+	return apply_command(Commands.cast_vote(player_id, choice))
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 # Apply a command. Returns true if accepted.
@@ -295,6 +321,8 @@ func apply_command(cmd: Dictionary) -> bool:
 			return _cmd_set_subordination(cmd)
 		IDs.CommandType.GP_ACTION:
 			return _cmd_gp_action(cmd)
+		IDs.CommandType.CAST_VOTE:
+			return _cmd_cast_vote(cmd)
 	return false
 
 # ── Remote-multiplayer client seam ────────────────────────────────────────────
@@ -357,6 +385,7 @@ func _cmd_end_turn(player_id: int) -> bool:
 	if next_idx == 0 or next_idx < 0:
 		TurnEngine.world_step(_gs, _hooks)
 		_drain_wild_events()
+		_drain_assembly_events()
 		_add_notification("Turn " + str(_gs.turn_number) + " begins.", "info")
 		emit_signal("turn_advanced", _gs.turn_number)
 		if _gs.winning_alliance_id >= 0:
@@ -370,6 +399,8 @@ func _cmd_end_turn(player_id: int) -> bool:
 		# player last ended a turn).
 		_resume_goto(_gs.current_player_id)
 		emit_signal("player_turn_started", _gs.current_player_id)
+		# Raise the assembly ballot for a human who still owes a vote (§7.2).
+		_maybe_raise_vote_popup(_gs.current_player_id)
 
 	_dirty.mark_all()
 	return true
@@ -871,6 +902,12 @@ func _cmd_propose_trade(cmd: Dictionary) -> bool:
 	var target_aid: int = int(cmd.get("target_alliance_id", -1))
 	var to_alliance: Alliance = _gs.get_alliance(target_aid)
 	if from_alliance == null or to_alliance == null or from_alliance.id == target_aid:
+		return false
+	# A standing assembly trade embargo (§7.2) bars commerce with the sanctioned
+	# alliance, on either side of the deal.
+	var embargo: int = int(_gs.assembly.get("standing", {}).get("trade_embargo", -1))
+	if embargo >= 0 and (target_aid == embargo or from_alliance.id == embargo):
+		_add_notification("Trade barred by assembly embargo.", "info")
 		return false
 	var duration: int = int(cmd.get("duration", -1))
 	if duration <= 0:
@@ -1856,3 +1893,49 @@ func _drain_wild_events() -> void:
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+
+# Surface any diplomatic-assembly records produced this world step (§7.2): a
+# notification + an assembly_event signal for each opened session and resolved
+# proposal. Then clear the queue.
+func _drain_assembly_events() -> void:
+	if _gs.pending_assembly_events.empty():
+		return
+	for e in _gs.pending_assembly_events:
+		match str(e.get("kind", "")):
+			"session_opened":
+				_add_notification("The assembly convenes: " + str(e.get("name", "")) + ".", "major")
+			"resolution_resolved":
+				var verb: String = "passed" if bool(e.get("passed", false)) else "failed"
+				_add_notification("Assembly motion " + verb + ": " + str(e.get("name", "")) + ".", "major")
+		emit_signal("assembly_event", e)
+	_gs.pending_assembly_events = []
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+
+# Push a CHOOSE_ELECTION popup for a human player who is an eligible member of an
+# open assembly session and has not yet voted (§7.2). AI players vote through
+# PlayerAI.manage_assembly instead, so they never see a popup.
+func _maybe_raise_vote_popup(player_id: int) -> void:
+	var p: Player = _gs.get_player(player_id)
+	if p == null or p.is_ai:
+		return
+	if not Assembly.has_open_session(_gs) or Assembly.has_voted(_gs, player_id):
+		return
+	var body: String = str(_gs.assembly.get("kind", ""))
+	if not Assembly.is_member(_gs, p, body):
+		return
+	var pending: Dictionary = Assembly.pending_proposal(_gs)
+	push_popup({
+		"type": IDs.PopupType.CHOOSE_ELECTION,
+		"player_id": player_id,
+		"resolution_id": str(pending.get("resolution_id", "")),
+		"name": str(pending.get("name", "")),
+		"text": str(pending.get("text", ""))
+	})
+
+func _cmd_cast_vote(cmd: Dictionary) -> bool:
+	var ok: bool = Assembly.cast_vote(_gs, int(cmd["player_id"]), str(cmd.get("choice", "")))
+	if ok:
+		_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+		_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+	return ok
