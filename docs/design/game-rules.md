@@ -488,6 +488,53 @@ organization.
 * **Events**: periodic scripted/random events with prerequisites, player choices, and
   effects, largely defined in external content data.
 
+### 9.1 Wild-forces behaviour (provisional)
+> **⚠️ Provisional — preliminary, not verified.** This subsection is a first-pass model of how
+> spawned wild/raider forces *act* (as opposed to merely spawning, §9 bullet 1). It is a
+> deliberately simple deterministic AI and has **not** been tuned against the reference game.
+> The radii, wave lengths, cooldowns, caps, and the aggression scaling below are placeholders to
+> be balanced before relying on them. All quantities are integer math per the engine invariants,
+> and every stochastic choice is drawn from the shared generator so wild turns are reproducible
+> and captured by save/load.
+
+Wildlife and raiders are owned by the **wild faction** (`owner_player_id = -2`) and have no slot
+in the round-robin, so they act once per **whole-world step** (§3 world-step 4), immediately
+after spawning. The behaviour is a four-stage loop:
+
+* **Refresh.** Wild units never receive a per-player step, so their movement allowance is
+  restored at the start of the wild phase.
+* **Act.** Each wild unit either marches toward a **raid goal** (the target tile of the wave it
+  was mustered for) or, as a free **scout** with no goal, **chases** the nearest player unit or
+  city it can see (within `wild_detect_radius`, widened under the aggression setting). A scout
+  that sees no one **wanders** one tile. Movement uses the standard pathfinder; stepping into a
+  player unit resolves **combat** (§5), and stepping onto an **undefended** player city
+  **assaults** it (§4.8) — wild captors **always raze** (§4.5), never hold.
+* **Detect & alert.** A scout that sights a player **rouses the nearest idle raider camp**
+  (a wild settlement, §9). The camp records the sighted tile as its **alert target** and begins
+  mustering. A camp already mustering or cooling down is skipped, and with **no camp present no
+  wave forms** — camps are the only muster point.
+* **Muster.** A roused camp spawns **one raider per world step** aimed at its alert target for
+  the wave's length (`wild_wave_length`), then enters a **cooldown** (`wild_alert_cooldown`)
+  before it can be roused again. Wave units are the **strongest generic (non-unique) land unit
+  the most-advanced player has unlocked** — chosen **globally** (one wave strength worldwide),
+  honouring tech prerequisites but **ignoring resource requirements** (raiders are never gated on
+  copper/iron/horse). Total wild population is held under a land-based cap plus a small wave
+  headroom (`wild_wave_unit_bonus`) so a wave can mass without permanently flooding the map.
+
+The **optional aggression setting** (§9 bullet 1; a new-game toggle, serialized on the game
+state) lengthens waves (`wild_aggression_wave_bonus`), shortens cooldowns
+(`wild_aggression_cooldown_cut`), and widens scout sight (`wild_aggression_detect_bonus`).
+
+Combat and conquest the wild AI performs are applied through the same shared rules as player
+actions (the `CombatApply` module and the §4.8 city-fall path), and the few results the UI must
+surface — each fight, each razed city — are queued on the game state and drained by the facade
+into the usual `combat_resolved` / `city_razed` signals, exactly as §4.9 culture flips are.
+
+**Known gaps / simplifications (to revisit):** scouts target the *tile* a player occupied when
+sighted and do not re-home if the target moves; "nearest camp" ignores distance, so a wave can
+muster far from the sighted player; raiders never upgrade or retreat; and there is no naval or
+air wild presence.
+
 ---
 
 ## 10. Win conditions

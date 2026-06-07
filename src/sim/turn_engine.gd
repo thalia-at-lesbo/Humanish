@@ -37,10 +37,12 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	if not hooks.run(IDs.Phase.WORLD_TILE_UPKEEP, gs):
 		_tile_upkeep(gs)
 
-	# 4. Spawn wild/raider settlements and units
+	# 4. Spawn wild/raider settlements and units, then let them act (§9 scouts,
+	#    camp alerts, mustered waves — provisional).
 	if not hooks.run(IDs.Phase.WORLD_SPAWN_WILD, gs):
 		WildForces.spawn_turn(gs, gs.rng)
 		WildForces.spawn_raider_settlement(gs, gs.rng)
+		WildAI.run(gs, gs.rng)
 
 	# 5. Environmental degradation
 	if not hooks.run(IDs.Phase.WORLD_ENVIRONMENTAL, gs):

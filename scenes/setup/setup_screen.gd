@@ -24,6 +24,7 @@ var _map_type_btn: OptionButton
 var _map_type_ids: Array = []
 var _pace_btn: OptionButton
 var _difficulty_btn: OptionButton
+var _aggressive_wild_check: CheckBox
 var _seed_edit: LineEdit
 var _player_count_spin: SpinBox
 var _error_label: Label
@@ -138,6 +139,12 @@ func _build_ui() -> void:
 	diff_row.add_child(_difficulty_btn)
 	vbox.add_child(diff_row)
 
+	# Aggressive wild forces (§9): longer raider waves, shorter cooldowns.
+	_aggressive_wild_check = CheckBox.new()
+	_aggressive_wild_check.text = "Aggressive raiders"
+	_aggressive_wild_check.pressed = false
+	vbox.add_child(_aggressive_wild_check)
+
 	# Seed
 	var seed_row: HBoxContainer = HBoxContainer.new()
 	var seed_lbl: Label = Label.new()
@@ -226,7 +233,8 @@ func _on_start_pressed() -> void:
 
 	_facade = load("res://src/api/sim_facade.gd").new()
 	_facade.setup(_db, seed_val, world_size_id, pace_id, difficulty_id,
-		player_configs, ["last_standing", "dominance", "cultural", "time"], map_type_id)
+		player_configs, ["last_standing", "dominance", "cultural", "time"], map_type_id,
+		_aggressive_wild_check.pressed)
 
 	if _on_start_callback != null:
 		_on_start_callback.call_func(_facade, _db)

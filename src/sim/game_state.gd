@@ -32,6 +32,10 @@ var current_player_id: int = -1  # whose turn it is (-1 = world step)
 var enabled_win_conditions: Array = []
 var winning_alliance_id: int = -1  # -1 = game still running
 
+# Optional §9 setting: when true, wild/raider forces muster longer waves with
+# shorter cooldowns and a wider scout reach (WildAI). Off by default.
+var wild_aggressive: bool = false
+
 # Founded beliefs and econ orgs (globally tracked)
 var founded_beliefs: Dictionary = {}   # belief_id -> founder player_id
 var founded_econ_orgs: Dictionary = {} # org_id -> founder player_id
@@ -48,6 +52,12 @@ var diplomatic_votes: Dictionary = {}  # alliance_id -> int votes
 # player step, drained by SimFacade into notifications + the city_flipped signal.
 # Not serialized: it never survives past the end of the turn that produced it.
 var pending_flips: Array = []  # [{settlement_id, from_player_id, to_player_id}]
+
+# Transient wild-forces combat/conquest records produced by WildAI during the
+# world step (§9), drained by SimFacade into notifications + combat/conquest
+# signals. Not serialized: it never survives past the turn that produced it.
+# Each entry is {"kind": "combat"/"captured"/"razed", ...payload}.
+var pending_wild_events: Array = []
 
 # Auto-incrementing IDs
 var _next_unit_id: int = 1
@@ -161,6 +171,7 @@ func serialize() -> Dictionary:
 		"current_player_id": current_player_id,
 		"enabled_win_conditions": enabled_win_conditions.duplicate(),
 		"winning_alliance_id": winning_alliance_id,
+		"wild_aggressive": wild_aggressive,
 		"founded_beliefs": founded_beliefs.duplicate(),
 		"founded_econ_orgs": founded_econ_orgs.duplicate(),
 		"endgame_project_stages": endgame_project_stages.duplicate(),
@@ -193,6 +204,7 @@ static func deserialize(d: Dictionary, db_ref):
 	gs.current_player_id = int(d.get("current_player_id", -1))
 	gs.enabled_win_conditions = d.get("enabled_win_conditions", []).duplicate()
 	gs.winning_alliance_id = int(d.get("winning_alliance_id", -1))
+	gs.wild_aggressive = bool(d.get("wild_aggressive", false))
 	gs.founded_beliefs = d.get("founded_beliefs", {}).duplicate()
 	gs.founded_econ_orgs = d.get("founded_econ_orgs", {}).duplicate()
 	gs.endgame_project_stages = d.get("endgame_project_stages", {}).duplicate()

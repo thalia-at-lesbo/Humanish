@@ -52,7 +52,8 @@ var _remote_waiting: bool = false
 
 func setup(db: DataDB, seed_val: int, world_size_id: String, pace_id: String,
 		difficulty_id: String, player_configs: Array,
-		enabled_win_conditions: Array, map_type_id: String = "continents") -> void:
+		enabled_win_conditions: Array, map_type_id: String = "continents",
+		aggressive_wild: bool = false) -> void:
 	_db = db
 	_hooks = Hooks.new()
 	_dirty = load("res://src/api/dirty_flags.gd").new()
@@ -68,6 +69,7 @@ func setup(db: DataDB, seed_val: int, world_size_id: String, pace_id: String,
 	_gs.pace_id = pace_id
 	_gs.difficulty_id = difficulty_id
 	_gs.enabled_win_conditions = enabled_win_conditions.duplicate()
+	_gs.wild_aggressive = aggressive_wild
 
 	var ws: Dictionary = db.get_world_size(world_size_id)
 	_gs.max_turns = int(db.get_pace(pace_id).get("max_turns", 500))
@@ -339,6 +341,7 @@ func _cmd_end_turn(player_id: int) -> bool:
 	var next_idx: int = _get_next_player_index(player_id)
 	if next_idx == 0 or next_idx < 0:
 		TurnEngine.world_step(_gs, _hooks)
+		_drain_wild_events()
 		_add_notification("Turn " + str(_gs.turn_number) + " begins.", "info")
 		emit_signal("turn_advanced", _gs.turn_number)
 		if _gs.winning_alliance_id >= 0:
@@ -1107,116 +1110,11 @@ func _cmd_unload_unit(cmd: Dictionary) -> bool:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Apply a resolved unit-vs-unit combat to state. Thin wrapper over the shared
+# pure CombatApply sim module (also used by WildAI); callers emit combat_resolved.
 func _apply_combat_result(attacker: Unit, defender: Unit,
 		result: Dictionary, advance: bool = true) -> void:
-	attacker.health = int(result["attacker_health_after"])
-	defender.health = int(result["defender_health_after"])
-
-	if result["attacker_withdrew"]:
-		# Move attacker back (handled by move stack; health already set)
-		pass
-
-	attacker.experience += int(result["attacker_xp_gain"])
-	defender.experience += int(result["defender_xp_gain"])
-
-	# Auto-promote survivors that crossed an experience threshold (§5.5).
-	if result["attacker_survived"]:
-		_award_promotions(attacker)
-	if result["defender_survived"]:
-		_award_promotions(defender)
-
-	# War-fatigue: the losing side's alliance accrues fatigue (§4.5, §7).
-	if not result["defender_survived"] and result["attacker_survived"]:
-		_accrue_war_fatigue(defender, attacker)
-	elif not result["attacker_survived"] and result["defender_survived"]:
-		_accrue_war_fatigue(attacker, defender)
-
-	if not result["attacker_survived"]:
-		Stack.remove_unit(_gs.units, attacker.id)
-	if not result["defender_survived"]:
-		Stack.remove_unit(_gs.units, defender.id)
-		# Attacker may advance (bombard/air strikes pass advance = false)
-		if result["attacker_survived"] and advance:
-			attacker.x = defender.x
-			attacker.y = defender.y
-
-	# Spillover to stacked units (siege attackers)
-	if result["spillover_damage"] > 0:
-		for u in Stack.at(_gs.units, defender.x, defender.y, defender.owner_player_id):
-			if u.id != defender.id:
-				u.health = max(0, u.health - int(result["spillover_damage"]))
-				if u.health <= 0:
-					Stack.remove_unit(_gs.units, u.id)
-
-	# Flanking: fast attackers damage part of the defeated defender's stack (§5.4).
-	if result["flanking_damage"] > 0:
-		for u in Stack.at(_gs.units, defender.x, defender.y, defender.owner_player_id):
-			if u.id != defender.id:
-				u.health = max(0, u.health - int(result["flanking_damage"]))
-				if u.health <= 0:
-					Stack.remove_unit(_gs.units, u.id)
-
-	# Great General accrues from combat victories (§14.2): the surviving victor's
-	# owner gains points and may produce a Great General in the field.
-	if result["attacker_survived"] != result["defender_survived"]:
-		if result["attacker_survived"]:
-			GreatPeople.award_combat_points(_gs,
-				_gs.get_player(attacker.owner_player_id),
-				attacker.x, attacker.y, int(result["attacker_xp_gain"]))
-		else:
-			GreatPeople.award_combat_points(_gs,
-				_gs.get_player(defender.owner_player_id),
-				defender.x, defender.y, int(result["defender_xp_gain"]))
-
-# Grant promotions for each experience level newly reached (§5.5). Levels are the
-# data-defined experience_thresholds; each new level awards one eligible promotion.
-func _award_promotions(u: Unit) -> void:
-	var thresholds: Array = _db.constants.get("experience_thresholds", [])
-	while u.experience_level + 1 < thresholds.size() \
-			and u.experience >= int(thresholds[u.experience_level + 1]):
-		u.experience_level += 1
-		var promo: String = _pick_promotion(u)
-		if promo == "":
-			break  # nothing eligible left; stop awarding
-		u.promotions.append(promo)
-
-# First promotion (in data order) whose prereqs are met, that applies to this
-# unit's class/domain, and that it does not already hold. "" if none qualifies.
-func _pick_promotion(u: Unit) -> String:
-	var udata: Dictionary = _db.get_unit(u.unit_type_id)
-	var cls: String = str(udata.get("classification", ""))
-	var dom: String = str(udata.get("domain", "land"))
-	for pid in _db.promotions:
-		if pid in u.promotions:
-			continue
-		var promo: Dictionary = _db.promotions[pid]
-		var applies: String = str(promo.get("applies_to", "all"))
-		if applies != "all" and applies != cls and applies != dom:
-			continue
-		var ok: bool = true
-		for pr in promo.get("prereqs", []):
-			if not (pr in u.promotions):
-				ok = false
-				break
-		if ok:
-			return pid
-	return ""
-
-# The defeated unit's alliance accumulates war-fatigue against the victor's
-# alliance. Wild forces (no player/alliance) are skipped.
-func _accrue_war_fatigue(loser: Unit, winner: Unit) -> void:
-	var lp: Player = _gs.get_player(loser.owner_player_id)
-	var wp: Player = _gs.get_player(winner.owner_player_id)
-	if lp == null or wp == null:
-		return
-	var la: Alliance = _gs.get_alliance(lp.alliance_id)
-	if la == null:
-		return
-	# War Weariness does not increase for a player enjoying a Golden Age (§14.4).
-	if GreatPeople.is_in_golden_age(lp):
-		return
-	var amt: int = _db.get_constant("war_fatigue_per_loss", 5)
-	la.war_fatigue[wp.alliance_id] = int(la.war_fatigue.get(wp.alliance_id, 0)) + amt
+	CombatApply.apply_unit_result(_gs, attacker, defender, result, advance)
 
 # An enemy fighter near the target may intercept an inbound air strike. Returns
 # true if the strike is aborted (the bomber was engaged), resolving the air-to-air
@@ -1811,6 +1709,27 @@ func _drain_flips() -> void:
 		emit_signal("city_flipped", f["settlement_id"],
 			f["from_player_id"], f["to_player_id"])
 	_gs.pending_flips = []
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+
+# Surface any wild-forces combat/conquest records WildAI produced this world step
+# (§9): each fight re-emits combat_resolved; each razed city clears a stale
+# selection, notifies, and emits city_razed. Then clear the queue.
+func _drain_wild_events() -> void:
+	if _gs.pending_wild_events.empty():
+		return
+	for e in _gs.pending_wild_events:
+		match e["kind"]:
+			"combat":
+				emit_signal("combat_resolved", e["result"])
+			"razed":
+				var sid: int = int(e["settlement_id"])
+				if _selection != null and _selection.head_city() == sid:
+					_selection.clear()
+				_add_notification(str(e["name"]) + " was razed by raiders.", "major")
+				emit_signal("city_razed", sid, -2)
+	_gs.pending_wild_events = []
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
