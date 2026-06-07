@@ -79,8 +79,15 @@ jobs:
 
       # Bundle user documentation alongside the executables so players have
       # the quick-start guide and reference without a separate download.
+      # Docs go into build/docs/ once; the per-platform copies are for the
+      # artifact zip only — the Release upload lists each filename once to
+      # avoid the duplicate-asset 404 that softprops raises when it tries to
+      # PATCH an asset it just uploaded under the same basename.
       - name: Bundle user docs
         run: |
+          mkdir -p build/docs
+          cp docs/user/quick-start.md    build/docs/
+          cp docs/user/user-reference.md build/docs/
           cp docs/user/quick-start.md    build/linux/
           cp docs/user/user-reference.md build/linux/
           cp docs/user/quick-start.md    build/windows/
@@ -102,12 +109,8 @@ jobs:
         with:
           files: |
             build/linux/Humanish-linux-amd64
-            build/linux/quick-start.md
-            build/linux/user-reference.md
             build/windows/Humanish-windows-amd64.exe
-            build/windows/quick-start.md
-            build/windows/user-reference.md
             build/macos/Humanish-macos.zip
-            build/macos/quick-start.md
-            build/macos/user-reference.md
+            build/docs/quick-start.md
+            build/docs/user-reference.md
             build/SHA256SUMS
