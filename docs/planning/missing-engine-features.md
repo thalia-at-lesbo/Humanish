@@ -81,7 +81,9 @@ What remains:
   unwired: domain-specific modifiers and self-sacrifice.
 - **Air basing** (§5.2) — air strikes and interception work, but there is no
   carrier/airfield basing requirement; `MISSION_AIRLIFT` teleports within range.
-- **Blockading** (§5.6) — naval blockade of coastal tiles / trade is unimplemented.
+- ~~**Blockading** (§5.6)~~ — done: a hostile naval unit within `blockade_range`
+  of a coastal city cuts its commerce by `blockade_commerce_penalty`
+  (`TurnEngine._blockade_penalty`, applied in `_settlement_growth`).
 - **Bombarding settlement *defenses*** (§5.6) — city defence is folded into siege HP
   (`city_max_health`); there is no separate, recoverable "defence" stat to bombard
   down before an assault.

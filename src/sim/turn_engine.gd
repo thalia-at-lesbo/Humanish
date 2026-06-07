@@ -281,6 +281,12 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 		total_prod += Fixed.scale(total_prod,
 			PolicyEffects.sum_int(player, db, "capital_production"))
 
+	# Naval blockade (§5.6): an enemy fleet sitting off a coastal city throttles its
+	# trade, cutting its commerce while the blockade holds.
+	var blockade: int = _blockade_penalty(gs, s, player)
+	if blockade > 0:
+		total_commerce -= Fixed.scale(total_commerce, blockade)
+
 	# Anarchy (§8): during the interregnum after switching an established civic or
 	# state religion the economy seizes up — settlements yield no commerce, so no
 	# gold, research, culture, or intelligence accrues. Food and production hold.
@@ -648,6 +654,34 @@ static func _grant_free_promotions(gs: GameState, u: Unit, s: Settlement) -> voi
 # (cottage → hamlet → village → town). Only worked tiles grow, mirroring the
 # reference model. Pure age bookkeeping on the tile; output is gated by tech in
 # TileOutput as usual.
+# Naval-blockade commerce penalty (§5.6): a coastal city with a hostile naval unit
+# (wild, or an enemy at war) sitting within `blockade_range` has its trade choked,
+# returning `blockade_commerce_penalty` percent. 0 for inland cities or when no
+# hostile fleet is in range.
+static func _blockade_penalty(gs: GameState, s: Settlement, player: Player) -> int:
+	var db: DataDB = gs.db
+	if not _is_coastal(gs, s.x, s.y):
+		return 0
+	var reach: int = db.get_constant("blockade_range", 2)
+	for u in gs.units:
+		if u.owner_player_id == player.id:
+			continue
+		if db.get_unit(u.unit_type_id).get("domain", "") != "sea":
+			continue
+		if u.owner_player_id != -2 and not gs.are_at_war(player.id, u.owner_player_id):
+			continue
+		if gs.map.distance(s.x, s.y, u.x, u.y) <= reach:
+			return db.get_constant("blockade_commerce_penalty", 50)
+	return 0
+
+# True when a tile borders water (a settlement on it is coastal).
+static func _is_coastal(gs: GameState, x: int, y: int) -> bool:
+	for nb in gs.map.neighbours8(x, y):
+		var lf: String = str(gs.db.get_terrain(nb.terrain_id).get("landform", ""))
+		if lf == "water" or lf == "deep_water":
+			return true
+	return false
+
 static func _grow_cottages(gs: GameState, player: Player) -> void:
 	var db: DataDB = gs.db
 	var per_turn: int = 2 if PolicyEffects.has_flag(player, db, "faster_cottage_growth") else 1
