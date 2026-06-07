@@ -328,6 +328,25 @@ When a settlement flips, ownership transfers exactly as a kept capture (§4.8) �
 queue/specialist clearing, siege-health restore, and Palace handling apply — but no combat or
 attacking stack is involved.
 
+### 4.10 Tile improvement maturation (provisional)
+
+> **⚠️ Provisional — implemented, not verified.** The cottage-line chain and its growth
+> rates live in `improvements.json` (`upgrades_to` / `upgrade_turns`) and are placeholders to
+> be tuned against the reference game.
+
+Some tile improvements **mature** as they are worked. A commerce improvement built on a tile
+(the **cottage**) accumulates worked-turns and, on reaching its `upgrade_turns`, advances to
+the next stage — **cottage → hamlet → village → town** — each stage yielding more commerce
+than the last.
+
+* **Only worked tiles grow.** A tile advances only on a turn its settlement actually works it;
+  an unworked or abandoned improvement holds its current stage.
+* **Labor civics accelerate growth.** A civic carrying `faster_cottage_growth` (Emancipation)
+  speeds maturation (the engine doubles the per-turn rate).
+* Each stage's output is still gated by the owning player's technology in the normal way, so an
+  advanced stage reached before its enabling tech yields its lower, tech-gated output until the
+  tech is researched.
+
 ---
 
 ## 5. Units
@@ -420,6 +439,95 @@ Outcomes and side effects:
   specialist, and special-person actions (instant technology, rushed construction,
   triggering a celebration age, or seeding an economic organization).
 
+### 5.7 Nuclear weapons & radiation (provisional)
+> **⚠️ Provisional — implemented, magnitudes unverified.** This subsection models the
+> **nuclear-weapon** units (`tactical_nuke`, `icbm`) and the **radioactive fallout** they
+> leave behind. The data scaffolding exists — the units, the `nuke`/`one_use`/`global_range`
+> tags, the `fission` tech, the **Manhattan Project** national wonder (`enable_nukes_global`),
+> the **Bomb Shelter** structure (`nuke_damage_reduction`), the **Fallout** feature, the
+> **Non-Proliferation** assembly resolution and the `no_nuclear` standing effect (§7.2) — and
+> the detonation/radiation rules below are now **implemented** in `sim/nuclear.gd` (launch via
+> the `NUCLEAR_STRIKE` command; meltdowns tick in the world step; fallout is scrubbed by the
+> `MISSION_CLEAN_FALLOUT` worker action). The behaviour has **not** been checked against the
+> reference game: every blast radius, damage figure, radiation chance, and the listed
+> constants are **placeholders** to be verified and tuned (`data/constants.json` `nuke_*` /
+> `nuclear_meltdown_chance`; per-unit `blast_radius`). All quantities are integer math per the
+> engine invariants; chances are integer percentages, and every stochastic step draws from the
+> shared `gs.rng` in a fixed tile order so replays reproduce the same craters and fallout.
+
+A **nuclear strike** is a one-use area-effect attack, distinct from the round-by-round duel of
+§5.4. It does not "fight" a single defender: it detonates over a **target tile** and damages
+*everything* in an area, friend and foe alike, then **contaminates** the ground.
+
+* **Eligibility & range.** Nuclear units carry the `nuke` + `one_use` tags. A `tactical_nuke`
+  is a short-range missile (data `air_range`, placeholder 12) launched from a settlement,
+  carrier, or missile-cruiser within range; an `icbm` carries `global_range` (`air_range` 999)
+  and may target **any** tile on the map. Both require the **Uranium** resource to build and a
+  player who has either completed the **Manhattan Project** or for whom nukes are globally
+  enabled. The unit is **consumed** on launch whether or not it is intercepted.
+* **Interception.** Before detonation, an enemy with an in-range anti-air/SDI capability
+  (placeholder: SAM Infantry, Missile Cruiser, or a future "SDI" defensive structure within
+  range of the target) rolls a fixed **interception chance** (placeholder, tunable). A
+  successful interception destroys the missile **with no effect on the target** (the launching
+  player is still notified). This roll is drawn from the shared generator in pipeline order.
+* **Blast & damage.** On detonation the engine resolves an **area effect** centred on the target
+  tile out to a **blast radius** (placeholder: Tactical Nuke = the single target tile only
+  ("0", point strike); ICBM = the target tile plus all adjacent tiles, "radius 1"):
+  * **Units** in the blast take heavy, **non-lethal-floored** damage — each affected unit is
+    reduced by a large percentage of max health but a strike alone does **not** wipe a stack to
+    zero (placeholder: leave each unit at ≥ 1 health, mirroring the §5.4 combat-limit idea), so
+    nukes **soften** defenders rather than auto-killing them. Damage applies to **all** owners in
+    the area, **including the attacker's own** units — there is no friendly-fire exemption.
+  * **Settlements** in the blast lose a share of current **population** (placeholder) and have
+    their accumulated **defensive/garrison bonus** and stored production reduced; a settlement is
+    **never destroyed outright** by a strike (it can still be taken only by capture, §4.8).
+  * **Bomb Shelter** in a struck settlement reduces the population loss and unit damage there by
+    its `nuke_damage_reduction` (data, placeholder 50%).
+  * **Tile improvements & features** in the blast are **pillaged/stripped** (improvements
+    destroyed; vegetation removed), as with a heavy area strike (§11).
+* **Radiation (fallout).** Each tile in the blast — and a ring of tiles around it — has a
+  **contamination chance** (placeholder) of gaining the **Fallout** feature (data: output
+  `−3/−3/−3` food/production/commerce, `+50` movement cost, `health_penalty 1`, `removable`).
+  Fallout therefore:
+  * **poisons tile yield** (worked Fallout tiles produce almost nothing),
+  * **slows movement** through the contaminated zone,
+  * **harms wellbeing** (§4.6) of any settlement working a Fallout tile in its radius, and
+  * **lingers** until cleaned. A worker-type unit removes Fallout with a `clean_fallout` work
+    action (cost in data; the **Ecology** tech / Recycling Center speeds it — see §11). Fallout
+    may **also** be created independently by ordinary heavy area strikes and by a **Nuclear Plant
+    meltdown** (provisional: a small per-turn meltdown chance that spawns Fallout around the
+    plant's settlement), not only by nuclear weapons.
+* **Diplomatic & global consequences.** Launching a nuclear strike is an act of war and a
+  **global** event:
+  * it adds a large amount of **war-fatigue** (§ combat/economy) to the *attacker* (and unhappiness
+    across that player's settlements), reflecting domestic and world revulsion;
+  * it may **break peace** and sour standing with all third parties, not just the victim;
+  * while a **Non-Proliferation** resolution / `no_nuclear` standing effect is in force (§7.2),
+    building or launching nuclear units is **forbidden**, and a player who defies it incurs the
+    assembly-defiance penalty (§4.5) once that hook is wired.
+
+**Determinism.** Every stochastic step — interception, per-unit blast damage spread, the
+per-tile contamination roll, and any meltdown check — draws from `gs.rng` in strict pipeline
+order, so a replay reproduces the same craters and fallout. Strike results and the list of newly
+contaminated tiles are surfaced through the normal area-effect/event channel for the
+presentation layer (notifications + a `combat_resolved`/area-strike signal).
+
+### 5.8 Naval blockade (provisional)
+
+> **⚠️ Provisional — implemented, not verified.** The blockade reach and the commerce
+> penalty (`blockade_range`, `blockade_commerce_penalty`) are placeholders to be tuned.
+
+A **coastal** settlement (one that borders water) whose sea approaches are held by a hostile
+fleet has its **trade choked**: while one or more hostile naval units — an enemy the owner is
+at war with, or a wild fleet — sit within `blockade_range` of the city, its **commerce** is cut
+by `blockade_commerce_penalty` (a percentage) for as long as the blockade holds.
+
+* Only **naval** units blockade, and only **coastal** cities can be blockaded; inland cities
+  and a city's own (or a peaceful third party's) fleet have no effect.
+* The penalty applies to the city's total commerce — and therefore to its trade-route income
+  (§6.7) — before the economic split, so it reduces gold, research, culture, and intelligence
+  alike. (A blockade does not reduce food or production.)
+
 ---
 
 ## 6. Players, economy, and research
@@ -477,6 +585,41 @@ Citizens may be assigned as **specialists** that yield economic output and point
 rising threshold, a special person is produced, who can settle for a permanent bonus,
 construct a wonder, grant a technology, trigger a celebration age, or seed an economic
 organization.
+
+### 6.6 Conscription / the draft (provisional)
+
+> **⚠️ Provisional — implemented, not verified.** The population cost, minimum city size,
+> and unhappiness (`draft_population_cost`, `draft_min_population`, `draft_anger_turns`) are
+> placeholders to be tuned.
+
+A player running a civic that permits conscription (`can_draft`, e.g. **Nationhood**) may
+**draft** a military unit directly from a city's population instead of building one:
+
+* The city must be at or above a **minimum size** and **not in disorder**; the draft spends
+  population and stirs **conscription unhappiness** (the same anger channel as rushing, §4.5).
+* The unit raised is the **most advanced draftable unit** the player has the technology for
+  (data flag `draftable`, e.g. the gunpowder infantry line). Drafted units arrive with reduced
+  training — only their civic starting-experience, no building experience (§5.5).
+
+### 6.7 Trade routes (provisional)
+
+> **⚠️ Provisional — implemented, not verified.** Route counts and yields (`trade_routes_base`,
+> `trade_route_per_city`, `trade_route_base_yield`, `trade_route_pop_pct`,
+> `trade_route_foreign_bonus`) are placeholders to be tuned. The base route count is **0**, so
+> routes appear only once a civic grants them.
+
+Each city runs a number of **trade routes** to other cities, each route adding **commerce** to
+the city's output (§4.3):
+
+* **Route count** is a base plus a per-city civic bonus (`trade_route_per_city`, e.g.
+  **Free Market**).
+* Each route connects to a **distinct other city**; the highest-yielding partners are chosen.
+  A route's yield is a base plus a share of the two cities' combined size, with an extra bonus
+  for a **foreign** partner.
+* **Restrictions.** A civic carrying `no_foreign_trade_routes` (**Mercantilism**) confines a
+  player's routes to its **own** cities, and no route ever runs to a city the player is **at
+  war** with. Route income is part of the city's commerce, so a **naval blockade** (§5.8)
+  chokes it along with the rest.
 
 ---
 
@@ -666,6 +809,25 @@ Distinct from a settlement's per-city belief (§8), each **player** may adopt on
   (§3.1 `OPEN_RELIGION`), which lists "none" plus every religion present in the player's
   cities; the AI adopts the religion its empire already follows but never switches afterward.
 
+### 8.2 Missionary belief spread (provisional)
+
+> **⚠️ Provisional — implemented, not verified.** The single-belief-per-city conversion rule
+> and the build-gate are a first-pass model not yet checked against the reference game.
+
+Beyond the passive turn-by-turn spread (§8), a player may spread a religion deliberately with a
+**missionary** unit (data tag `spread_religion`):
+
+* **Spreading.** A missionary standing on a city's tile converts that city to the player's
+  religion — its **state religion** if adopted, otherwise a belief the player **founded** or
+  one its cities already follow. In this single-belief-per-city model a missionary only
+  converts a **faithless** city, and the missionary is **consumed** on a successful spread.
+* **Theocracy block.** A target whose owner runs **Theocracy** (`blocks_nonstate_spread`)
+  rejects any religion other than that owner's state religion.
+* **Training missionaries.** A city can train missionaries only when the player **has a
+  religion** and the city holds a `trains_missionaries` structure (a **Monastery**) — or the
+  player runs **Organized Religion** (`missionary_without_monastery`), which lifts the
+  monastery requirement.
+
 ---
 
 ## 9. Wild forces, exploration rewards, and events
@@ -755,6 +917,14 @@ produces a per-turn chance of randomly degrading a tile — stripping vegetation
 terrain toward barrenness, or flooding low tiles — scaled by game settings. Area-effect
 strikes also add lingering contamination and pollution.
 
+**Radioactive fallout (provisional).** The strongest form of lingering contamination is the
+**Fallout** feature created by nuclear strikes, heavy area strikes, and (provisionally) Nuclear
+Plant meltdowns (§5.7). Fallout is modelled as a removable tile feature that poisons yield,
+slows movement, and harms settlement wellbeing (§4.6) until a worker-type unit clears it with a
+`clean_fallout` action. The **Ecology** tech and the **Recycling Center** structure speed
+cleanup; see §5.7 for the strike/meltdown side and the data tables for the Fallout feature's
+exact penalties. (Provisional — not yet implemented; constants are placeholders.)
+
 ---
 
 ## 12. Configurable data
@@ -763,7 +933,8 @@ Everything numeric and every named game object is treated as **external configur
 rather than hard-coded logic, including:
 
 * **Global constants**: combat resolution scale and damage magnitude, maximum health,
-  spillover/ranged/air damage, withdrawal/evasion caps, entrenchment cap,
+  spillover/ranged/air damage, withdrawal/evasion caps, entrenchment cap, nuclear blast
+  radius/damage, interception and per-tile contamination chances, and meltdown chance (§5.7),
   minimum/maximum experience per fight, healing rates by location, movement precision,
   visibility and blockade ranges, growth-threshold base and per-population multiplier,
   consumption per population, the anger-to-population divisor, minimum settlement spacing,

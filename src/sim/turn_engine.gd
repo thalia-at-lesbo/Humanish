@@ -48,6 +48,8 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	if not hooks.run(IDs.Phase.WORLD_ENVIRONMENTAL, gs):
 		Pollution.accumulate(gs)
 		Pollution.degrade(gs, gs.rng)
+		# Nuclear Plant meltdowns spread fallout around their settlement (§5.7).
+		Nuclear.meltdown_tick(gs, gs.rng)
 
 	# 6. Assign/reassign special institutional sites (stub)
 	if not hooks.run(IDs.Phase.WORLD_ASSIGN_SITES, gs):
@@ -133,6 +135,9 @@ static func player_step(gs: GameState, player_id: int, hooks: Hooks) -> void:
 	# Found a belief if this player has newly become eligible for one (§8). No-op
 	# (and no RNG draw) once every eligible belief is founded.
 	Beliefs.try_found(player_id, gs, gs.rng)
+
+	# Worked cottage-line tiles mature toward town (§8).
+	_grow_cottages(gs, player)
 
 	# Units that held position grow entrenchment and heal (§5.3, §5.6); a unit
 	# does neither on a turn it moves or fights. Moving/attacking resets
@@ -275,6 +280,17 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 			PolicyEffects.sum_int(player, db, "capital_commerce"))
 		total_prod += Fixed.scale(total_prod,
 			PolicyEffects.sum_int(player, db, "capital_production"))
+
+	# Trade routes (§8): each city runs a number of routes (granted by civics such
+	# as Free Market) to other cities, each adding commerce. Added before blockade so
+	# an enemy fleet chokes route income too.
+	total_commerce += _trade_route_commerce(gs, s, player)
+
+	# Naval blockade (§5.6): an enemy fleet sitting off a coastal city throttles its
+	# trade, cutting its commerce while the blockade holds.
+	var blockade: int = _blockade_penalty(gs, s, player)
+	if blockade > 0:
+		total_commerce -= Fixed.scale(total_commerce, blockade)
 
 	# Anarchy (§8): during the interregnum after switching an established civic or
 	# state religion the economy seizes up — settlements yield no commerce, so no
@@ -552,7 +568,14 @@ static func _complete_item(gs: GameState, s: Settlement,
 				var xp: int = PolicyEffects.sum_int(player, gs.db, "new_unit_xp")
 				if player.state_religion != "" and s.belief_id == player.state_religion:
 					xp += PolicyEffects.sum_int(player, gs.db, "state_religion_unit_xp")
+				# Building-XP: barracks/stable/drydock/airport/West Point/Pentagon and
+				# the unique replacements grant starting experience by unit category (§5.5).
+				xp += _structure_unit_xp(gs, s, player, iid)
 				u.experience = xp
+				# Earned XP may already cross a promotion threshold; then layer on any
+				# building-granted free promotions (Dun, Ikhanda, Trading Post, …).
+				CombatApply.award_promotions(gs, u)
+				_grant_free_promotions(gs, u, s)
 			gs.units.append(u)
 		"structure":
 			if iid == "palace":
@@ -572,6 +595,172 @@ static func _complete_item(gs: GameState, s: Settlement,
 			if not gs.endgame_project_stages.has(alliance_id):
 				gs.endgame_project_stages[alliance_id] = 0
 			gs.endgame_project_stages[alliance_id] += 1
+
+# Starting experience a newly built military unit draws from its city's (and the
+# empire's) buildings, by unit category (§5.5). Per-settlement keys come from the
+# structures in `s`; `unit_xp_all_cities` (Pentagon) is empire-wide.
+static func _structure_unit_xp(gs: GameState, s: Settlement,
+		player: Player, iid: String) -> int:
+	var db: DataDB = gs.db
+	if not _is_military_unit(db, iid):
+		return 0
+	var ud: Dictionary = db.get_unit(iid)
+	var dom: String = str(ud.get("domain", "land"))
+	var cls: String = str(ud.get("classification", ""))
+	var total: int = 0
+	for sid in s.structures:
+		var fx: Dictionary = db.get_structure(sid).get("effects", {})
+		total += int(fx.get("military_xp", 0))
+		total += int(fx.get("military_xp_city", 0))
+		if dom == "land":
+			total += int(fx.get("land_xp", 0))
+		elif dom == "sea":
+			total += int(fx.get("naval_xp", 0))
+		elif dom == "air":
+			total += int(fx.get("air_xp", 0))
+		if cls == "mounted" or cls == "armor":
+			total += int(fx.get("mounted_xp", 0))
+		if cls == "ranged":
+			total += int(fx.get("archery_xp", 0))
+		if cls == "siege":
+			total += int(fx.get("siege_xp", 0))
+	# Empire-wide unit XP (Pentagon's unit_xp_all_cities) from any owned city.
+	for other in gs.settlements:
+		if other.owner_player_id != player.id:
+			continue
+		for sid in other.structures:
+			total += int(db.get_structure(sid).get("effects", {}).get("unit_xp_all_cities", 0))
+	return total
+
+# Grant building-conferred free promotions to a freshly built unit (§5.5): a named
+# `free_promotion` (Dun→guerrilla1, Trading Post→navigation1, Red Cross→medic1)
+# that suits the unit's class/domain, and `free_promotion_all` (Ikhanda) which
+# grants one otherwise-eligible promotion. A named free promotion bypasses prereqs.
+static func _grant_free_promotions(gs: GameState, u: Unit, s: Settlement) -> void:
+	var db: DataDB = gs.db
+	var ud: Dictionary = db.get_unit(u.unit_type_id)
+	var cls: String = str(ud.get("classification", ""))
+	var dom: String = str(ud.get("domain", "land"))
+	for sid in s.structures:
+		var fx: Dictionary = db.get_structure(sid).get("effects", {})
+		var fp: String = str(fx.get("free_promotion", ""))
+		if fp != "" and not (fp in u.promotions):
+			var applies: String = str(db.get_promotion(fp).get("applies_to", "all"))
+			if applies == "all" or applies == cls or applies == dom:
+				u.promotions.append(fp)
+		if bool(fx.get("free_promotion_all", false)):
+			var pick: String = CombatApply.pick_promotion(gs, u)
+			if pick != "":
+				u.promotions.append(pick)
+
+# Cottage-line maturation (§8): each worked tile carrying an improvement with an
+# `upgrades_to` ages a step per turn (Emancipation's `faster_cottage_growth`
+# doubles the rate); on reaching `upgrade_turns` it advances to the next stage
+# (cottage → hamlet → village → town). Only worked tiles grow, mirroring the
+# reference model. Pure age bookkeeping on the tile; output is gated by tech in
+# TileOutput as usual.
+# Trade-route commerce for a city (§8). A city runs `trade_routes_base` plus the
+# civic `trade_route_per_city` (Free Market) routes, each to a distinct other city;
+# Mercantilism's `no_foreign_trade_routes` restricts them to the player's own
+# cities, and routes never run to a city the player is at war with. Each route's
+# yield is a base plus a share of the two cities' combined size, with a bonus for
+# foreign partners. Partners are chosen highest-yield first, deterministically.
+static func _trade_route_commerce(gs: GameState, s: Settlement, player: Player) -> int:
+	var db: DataDB = gs.db
+	var routes: int = db.get_constant("trade_routes_base", 0) \
+		+ PolicyEffects.sum_int(player, db, "trade_route_per_city")
+	if routes <= 0:
+		return 0
+	var no_foreign: bool = PolicyEffects.has_flag(player, db, "no_foreign_trade_routes")
+	var cands: Array = []  # [{yield, id}]
+	for o in gs.settlements:
+		if o.id == s.id:
+			continue
+		if o.owner_player_id != player.id:
+			if no_foreign:
+				continue
+			if gs.are_at_war(player.id, o.owner_player_id):
+				continue
+		var dist: int = gs.map.distance(s.x, s.y, o.x, o.y)
+		cands.append({"y": _route_yield(db, s, o, dist, player), "id": o.id})
+	# Selection-pick the highest-yield routes (ties broken by lower settlement id).
+	var total: int = 0
+	var taken: int = 0
+	var n: int = cands.size()
+	var used: Dictionary = {}
+	while taken < routes and taken < n:
+		var best: int = -1
+		for i in range(n):
+			if used.has(i):
+				continue
+			if best == -1:
+				best = i
+			elif cands[i]["y"] > cands[best]["y"] \
+					or (cands[i]["y"] == cands[best]["y"] and cands[i]["id"] < cands[best]["id"]):
+				best = i
+		if best == -1:
+			break
+		used[best] = true
+		total += int(cands[best]["y"])
+		taken += 1
+	return total
+
+# Commerce a single trade route yields between cities `s` and `o` at `dist` tiles.
+static func _route_yield(db: DataDB, s: Settlement, o: Settlement,
+		dist: int, player: Player) -> int:
+	var y: int = db.get_constant("trade_route_base_yield", 1)
+	y += ((s.population + o.population) * db.get_constant("trade_route_pop_pct", 25)) / 100
+	if o.owner_player_id != player.id:
+		y += db.get_constant("trade_route_foreign_bonus", 2)
+	return y if y >= 0 else 0
+
+# Naval-blockade commerce penalty (§5.6): a coastal city with a hostile naval unit
+# (wild, or an enemy at war) sitting within `blockade_range` has its trade choked,
+# returning `blockade_commerce_penalty` percent. 0 for inland cities or when no
+# hostile fleet is in range.
+static func _blockade_penalty(gs: GameState, s: Settlement, player: Player) -> int:
+	var db: DataDB = gs.db
+	if not _is_coastal(gs, s.x, s.y):
+		return 0
+	var reach: int = db.get_constant("blockade_range", 2)
+	for u in gs.units:
+		if u.owner_player_id == player.id:
+			continue
+		if db.get_unit(u.unit_type_id).get("domain", "") != "sea":
+			continue
+		if u.owner_player_id != -2 and not gs.are_at_war(player.id, u.owner_player_id):
+			continue
+		if gs.map.distance(s.x, s.y, u.x, u.y) <= reach:
+			return db.get_constant("blockade_commerce_penalty", 50)
+	return 0
+
+# True when a tile borders water (a settlement on it is coastal).
+static func _is_coastal(gs: GameState, x: int, y: int) -> bool:
+	for nb in gs.map.neighbours8(x, y):
+		var lf: String = str(gs.db.get_terrain(nb.terrain_id).get("landform", ""))
+		if lf == "water" or lf == "deep_water":
+			return true
+	return false
+
+static func _grow_cottages(gs: GameState, player: Player) -> void:
+	var db: DataDB = gs.db
+	var per_turn: int = 2 if PolicyEffects.has_flag(player, db, "faster_cottage_growth") else 1
+	for s in gs.settlements:
+		if s.owner_player_id != player.id:
+			continue
+		for cell in s.worked_tiles:
+			var t: Tile = gs.map.get_tile(cell[0], cell[1])
+			if t == null or t.improvement_id == "":
+				continue
+			var imp: Dictionary = db.get_improvement(t.improvement_id)
+			var next_id: String = str(imp.get("upgrades_to", ""))
+			if next_id == "":
+				continue
+			t.improvement_age += per_turn
+			var need: int = int(imp.get("upgrade_turns", 0))
+			if need > 0 and t.improvement_age >= need:
+				t.improvement_id = next_id
+				t.improvement_age = 0
 
 static func _settlement_culture(gs: GameState, s: Settlement, player: Player) -> void:
 	var db: DataDB = gs.db
@@ -673,6 +862,10 @@ static func _healing_rate(gs: GameState, u: Unit, player: Player) -> int:
 	# Garrisoned inside one of the player's own settlements heals fastest.
 	var settlement = gs.get_settlement_at(u.x, u.y)
 	if settlement != null and settlement.owner_player_id == player.id:
+		# A structure with `heals_units` (Ikhanda) fully restores its garrison (§5.5).
+		for sid in settlement.structures:
+			if db.get_structure(sid).get("effects", {}).get("heals_units", false):
+				return 100
 		return db.get_constant("healing_in_settlement", 30)
 	var tile: Tile = gs.map.get_tile(u.x, u.y)
 	if tile == null:
@@ -855,6 +1048,18 @@ static func _apply_research(gs: GameState, player: Player) -> void:
 	# Free Religion: a percentage boost to total science output (§8).
 	research_income += Fixed.scale(research_income,
 		PolicyEffects.sum_int(player, db, "science_output"))
+
+	# §6.3: when research is not independently funded (research slider at 0), net
+	# finance supplements it — a fraction of the player's finance income spills over
+	# into the current project so a fully commerce-funded empire still advances.
+	if player.slider_research == 0:
+		var fin_income: int = 0
+		for s in gs.settlements:
+			if s.owner_player_id == player.id:
+				fin_income += player.split_commerce(s.output_commerce)[0]
+		if fin_income > 0:
+			research_income += Fixed.scale(fin_income,
+				db.get_constant("finance_research_supplement_pct", 50))
 
 	player.research_store += research_income
 

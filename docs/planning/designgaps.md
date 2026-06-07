@@ -48,12 +48,14 @@ catalogued here so they aren't re-flagged as content gaps:
 - **Specialist slots.** §14.5's per-building slot counts are approximate; the
   `specialist_slots` in `structures.json` are authoritative (e.g. Library/Madrassa
   grant 2 Scientist slots, Market/Forum 2 Merchant slots).
-- **Building XP / free-promotion effects are present but inert.** The per-building
-  XP keys (`land_xp`, `mounted_xp`, `naval_xp`, `archery_xp`, `siege_xp`,
-  `air_xp`, `military_xp`) and `heals_units` / `free_promotion(_all)` are carried
-  in the data but not yet read by any sim site — the building-XP / free-promotion
-  subsystem is unbuilt (same status as the inert effects in §2). Only the *policy*
-  key `new_unit_xp` is consumed (`turn_engine.gd`).
+- **Building XP / free-promotion effects are now wired.** The per-building XP keys
+  (`land_xp`, `mounted_xp`, `naval_xp`, `archery_xp`, `siege_xp`, `air_xp`,
+  `military_xp`, `military_xp_city`, the empire-wide `unit_xp_all_cities`) and
+  `free_promotion` / `free_promotion_all` / `heals_units` are read when a unit is
+  built (`TurnEngine._structure_unit_xp` / `_grant_free_promotions`) and in the
+  garrison heal (`_healing_rate`). Building XP layers on the *policy* key
+  `new_unit_xp` and can itself cross a promotion threshold. Covered by
+  `tests/sim/test_building_xp.gd`.
 - **Minor unmodelled wonder sub-clauses.** A handful of atmospheric secondary
   effects are not represented: Stonehenge "centers world map", the Colosseum's
   culture-rate happiness, Angkor Wat "allows 3 Priest specialists", and the
@@ -103,13 +105,17 @@ Covered by `tests/sim/test_policy_effects.gd`.
 - `unlimited_specialists` (Caste System) — the sim caps specialists only by
   population; there is no per-building specialist *slot* ceiling to lift, so the
   flag has nothing to relax until a slot system exists.
-- `faster_cottage_growth` (Emancipation) and Emancipation's cross-faction
-  unhappiness — cottage→hamlet→village→town upgrading is not modelled.
-- `trade_route_per_city`, `no_foreign_trade_routes` (Free Market / Mercantilism)
-  and `corporation_maintenance_reduction` — trade routes are unbuilt (§3), and
-  econ orgs charge a per-spread cost rather than ongoing maintenance.
-- `can_draft` (Nationhood), `missionary_without_monastery` (Organized Religion)
-  — tied to the unbuilt draft / missionary mechanics noted in §3.
+- Emancipation's cross-faction unhappiness is not modelled (the cottage→hamlet→
+  village→town upgrading it speeds *is* now modelled — see below;
+  `faster_cottage_growth` is wired in `TurnEngine._grow_cottages`).
+- `trade_route_per_city` (Free Market) and `no_foreign_trade_routes`
+  (Mercantilism) are now wired: cities run trade routes (`TurnEngine._trade_route_commerce`,
+  base count `trade_routes_base` default 0, so routes appear only under a granting
+  civic), restricted to domestic partners by Mercantilism and never run to a city
+  at war. `corporation_maintenance_reduction` stays inert — econ orgs charge a
+  per-spread cost rather than ongoing maintenance, so there is nothing to reduce.
+- (`can_draft` and `missionary_without_monastery` are now wired — see the draft
+  and missionary subsystems below.)
 
 **Now wired by the state-religion feature (§8.1, provisional):** `blocks_nonstate_spread`
 (Theocracy) stops non-state religions spreading into a player's cities (`Beliefs.spread_all`),
@@ -147,6 +153,9 @@ subsystem this build does not have:
 - **Espionage verbs `sabotage` / `destroy` / `steal plans` as *unit missions*** —
   the mechanic exists at alliance scope via `ESPIONAGE_MISSION`; a spy-unit-on-tile
   mission model is unbuilt.
+- (`SPREAD_BELIEF` is now built: a missionary unit on a city tile spreads the
+  player's religion via the `SPREAD_BELIEF` command — see the missionary
+  subsystem.)
 - **`draft` (Nationhood) and `establish trade route`** — unbuilt mechanics already
   tracked in §2 (inert policy effects).
 

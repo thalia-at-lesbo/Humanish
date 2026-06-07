@@ -71,15 +71,19 @@ can never occur:
 
 What remains:
 
-- **Residual §5.3 strength modifiers** — `effective_strength()` now applies
-  promotions (incl. `vs_<class>`, `vs_fortified`, `attack_vs_settlement`,
-  `defense_in_settlement`), terrain/feature defence, entrenchment, and the city's
-  structure + cultural defence. Still unwired: river-crossing / amphibious **attack
-  penalties**, domain-specific modifiers, self-sacrifice, and the terrain-keyed
-  `defense_on_hills` promotion (a different key from the wired `combat_in_<id>`).
+- **Residual §5.3 strength modifiers** — `effective_strength()` applies promotions
+  (incl. `vs_<class>`, `vs_fortified`, `attack_vs_settlement`,
+  `defense_in_settlement`), terrain/feature defence, entrenchment, the city's
+  structure + cultural defence, and now the terrain-keyed `defense_on_hills`
+  promotion (Guerrilla line). `Combat.resolve()` now also applies the
+  **river-crossing** and **amphibious attack penalties** (constants existed but
+  were unused), waived by the Amphibious promotion / `amphibious` unit tag. Still
+  unwired: domain-specific modifiers and self-sacrifice.
 - **Air basing** (§5.2) — air strikes and interception work, but there is no
   carrier/airfield basing requirement; `MISSION_AIRLIFT` teleports within range.
-- **Blockading** (§5.6) — naval blockade of coastal tiles / trade is unimplemented.
+- ~~**Blockading** (§5.6)~~ — done: a hostile naval unit within `blockade_range`
+  of a coastal city cuts its commerce by `blockade_commerce_penalty`
+  (`TurnEngine._blockade_penalty`, applied in `_settlement_growth`).
 - **Bombarding settlement *defenses*** (§5.6) — city defence is folded into siege HP
   (`city_max_health`); there is no separate, recoverable "defence" stat to bombard
   down before an assault.
@@ -89,7 +93,9 @@ What remains:
 - **Alliance shared research** (§6.3) — `_advance_alliances()` accumulates
   `shared_research_store`, but `_apply_research()` researches per-player and never
   reads that pool. Research is not actually shared.
-- **Finance supplementing research** (§6.3) — not implemented.
+- **Finance supplementing research** (§6.3) — done: when the research slider is 0,
+  `_apply_research()` supplements the project with `finance_research_supplement_pct`
+  of the player's finance income (without double-deducting from treasury).
 - **Settlement upkeep scaling** (§6.1) — upkeep counts only unit + per-structure
   upkeep. Scaling by distance-from-capital, number of settlements, and size, plus
   policy upkeep, is absent.
@@ -257,3 +263,38 @@ Resolved on branch `feature/combat-class-settlement-modifiers`; covered by
       structure `defence_bonus` + `cultural_defence_bonus` (summed by
       `Combat._settlement_defence`). Replaces the dead `terrain.is_settlement` branch
       (a key that was never set); `_assault_city`/`WildAI` pass `at_settlement` too.
+
+### Tier 5 — Nuclear weapons & radiation (§5.7) — ✅ DONE
+
+Resolved on branch `dev-nuclear-and-gaps`; covered by `tests/sim/test_nuclear.gd`
+(20 tests). Previously the §5.7 data scaffolding existed (`tactical_nuke`/`icbm`,
+the `nuke`/`one_use`/`global_range` tags, Manhattan Project, Bomb Shelter, the
+Fallout feature, the `no_nuclear` resolution) with **zero** behaviour in code.
+
+- [x] **Launch** (§5.7) — new `NUCLEAR_STRIKE` command + `_cmd_nuclear_strike`
+      handler: requires the `nuke` tag and globally-enabled nukes (Manhattan
+      Project's `enable_nukes_global`), enforces range (`air_range`; `global_range`
+      reaches any tile), consumes the missile on launch, and is forbidden while the
+      `no_nuclear` standing effect is in force.
+- [x] **Interception** — an enemy `anti_air` unit (SAM / Missile Cruiser) within
+      `nuke_interception_range` rolls `nuke_interception_chance`; a hit aborts the
+      strike with no effect (rng drawn only when an interceptor exists).
+- [x] **Blast** (`sim/nuclear.gd`, pure static like `CombatApply`) — area effect over
+      a Chebyshev `blast_radius`: softens every unit (all owners, floored at 1 HP),
+      strips a settlement's population / stored production / siege integrity without
+      destroying it, and strips tile improvements & vegetation. Bomb Shelter applies
+      `nuke_damage_reduction`.
+- [x] **Fallout** — the blast and a one-tile ring gain the Fallout feature on a
+      per-tile `nuke_fallout_chance` / `nuke_fallout_ring_chance` roll (allowed
+      landforms only); the `MISSION_CLEAN_FALLOUT` worker action scrubs it.
+- [x] **Meltdown** — `Nuclear.meltdown_tick()` runs in the world-step environmental
+      phase: each Nuclear Plant has a `nuclear_meltdown_chance` of contaminating its
+      surroundings.
+- [x] **Consequences** — the attacker's alliance accrues `nuke_war_fatigue` against
+      each victim and declares war on them. Strike results surface via the new
+      `nuclear_detonated` signal.
+
+> Provisional: every magnitude is a placeholder (`data/constants.json` `nuke_*` /
+> `nuclear_meltdown_chance`, per-unit `blast_radius`) pending tuning against the
+> reference game. The assembly-defiance *penalty* for defying `no_nuclear` is moot
+> here because launching is simply rejected.
