@@ -554,7 +554,14 @@ static func _complete_item(gs: GameState, s: Settlement,
 				var xp: int = PolicyEffects.sum_int(player, gs.db, "new_unit_xp")
 				if player.state_religion != "" and s.belief_id == player.state_religion:
 					xp += PolicyEffects.sum_int(player, gs.db, "state_religion_unit_xp")
+				# Building-XP: barracks/stable/drydock/airport/West Point/Pentagon and
+				# the unique replacements grant starting experience by unit category (§5.5).
+				xp += _structure_unit_xp(gs, s, player, iid)
 				u.experience = xp
+				# Earned XP may already cross a promotion threshold; then layer on any
+				# building-granted free promotions (Dun, Ikhanda, Trading Post, …).
+				CombatApply.award_promotions(gs, u)
+				_grant_free_promotions(gs, u, s)
 			gs.units.append(u)
 		"structure":
 			if iid == "palace":
@@ -574,6 +581,63 @@ static func _complete_item(gs: GameState, s: Settlement,
 			if not gs.endgame_project_stages.has(alliance_id):
 				gs.endgame_project_stages[alliance_id] = 0
 			gs.endgame_project_stages[alliance_id] += 1
+
+# Starting experience a newly built military unit draws from its city's (and the
+# empire's) buildings, by unit category (§5.5). Per-settlement keys come from the
+# structures in `s`; `unit_xp_all_cities` (Pentagon) is empire-wide.
+static func _structure_unit_xp(gs: GameState, s: Settlement,
+		player: Player, iid: String) -> int:
+	var db: DataDB = gs.db
+	if not _is_military_unit(db, iid):
+		return 0
+	var ud: Dictionary = db.get_unit(iid)
+	var dom: String = str(ud.get("domain", "land"))
+	var cls: String = str(ud.get("classification", ""))
+	var total: int = 0
+	for sid in s.structures:
+		var fx: Dictionary = db.get_structure(sid).get("effects", {})
+		total += int(fx.get("military_xp", 0))
+		total += int(fx.get("military_xp_city", 0))
+		if dom == "land":
+			total += int(fx.get("land_xp", 0))
+		elif dom == "sea":
+			total += int(fx.get("naval_xp", 0))
+		elif dom == "air":
+			total += int(fx.get("air_xp", 0))
+		if cls == "mounted" or cls == "armor":
+			total += int(fx.get("mounted_xp", 0))
+		if cls == "ranged":
+			total += int(fx.get("archery_xp", 0))
+		if cls == "siege":
+			total += int(fx.get("siege_xp", 0))
+	# Empire-wide unit XP (Pentagon's unit_xp_all_cities) from any owned city.
+	for other in gs.settlements:
+		if other.owner_player_id != player.id:
+			continue
+		for sid in other.structures:
+			total += int(db.get_structure(sid).get("effects", {}).get("unit_xp_all_cities", 0))
+	return total
+
+# Grant building-conferred free promotions to a freshly built unit (§5.5): a named
+# `free_promotion` (Dun→guerrilla1, Trading Post→navigation1, Red Cross→medic1)
+# that suits the unit's class/domain, and `free_promotion_all` (Ikhanda) which
+# grants one otherwise-eligible promotion. A named free promotion bypasses prereqs.
+static func _grant_free_promotions(gs: GameState, u: Unit, s: Settlement) -> void:
+	var db: DataDB = gs.db
+	var ud: Dictionary = db.get_unit(u.unit_type_id)
+	var cls: String = str(ud.get("classification", ""))
+	var dom: String = str(ud.get("domain", "land"))
+	for sid in s.structures:
+		var fx: Dictionary = db.get_structure(sid).get("effects", {})
+		var fp: String = str(fx.get("free_promotion", ""))
+		if fp != "" and not (fp in u.promotions):
+			var applies: String = str(db.get_promotion(fp).get("applies_to", "all"))
+			if applies == "all" or applies == cls or applies == dom:
+				u.promotions.append(fp)
+		if bool(fx.get("free_promotion_all", false)):
+			var pick: String = CombatApply.pick_promotion(gs, u)
+			if pick != "":
+				u.promotions.append(pick)
 
 static func _settlement_culture(gs: GameState, s: Settlement, player: Player) -> void:
 	var db: DataDB = gs.db
@@ -675,6 +739,10 @@ static func _healing_rate(gs: GameState, u: Unit, player: Player) -> int:
 	# Garrisoned inside one of the player's own settlements heals fastest.
 	var settlement = gs.get_settlement_at(u.x, u.y)
 	if settlement != null and settlement.owner_player_id == player.id:
+		# A structure with `heals_units` (Ikhanda) fully restores its garrison (§5.5).
+		for sid in settlement.structures:
+			if db.get_structure(sid).get("effects", {}).get("heals_units", false):
+				return 100
 		return db.get_constant("healing_in_settlement", 30)
 	var tile: Tile = gs.map.get_tile(u.x, u.y)
 	if tile == null:

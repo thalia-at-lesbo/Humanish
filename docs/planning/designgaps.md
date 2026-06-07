@@ -48,12 +48,14 @@ catalogued here so they aren't re-flagged as content gaps:
 - **Specialist slots.** §14.5's per-building slot counts are approximate; the
   `specialist_slots` in `structures.json` are authoritative (e.g. Library/Madrassa
   grant 2 Scientist slots, Market/Forum 2 Merchant slots).
-- **Building XP / free-promotion effects are present but inert.** The per-building
-  XP keys (`land_xp`, `mounted_xp`, `naval_xp`, `archery_xp`, `siege_xp`,
-  `air_xp`, `military_xp`) and `heals_units` / `free_promotion(_all)` are carried
-  in the data but not yet read by any sim site — the building-XP / free-promotion
-  subsystem is unbuilt (same status as the inert effects in §2). Only the *policy*
-  key `new_unit_xp` is consumed (`turn_engine.gd`).
+- **Building XP / free-promotion effects are now wired.** The per-building XP keys
+  (`land_xp`, `mounted_xp`, `naval_xp`, `archery_xp`, `siege_xp`, `air_xp`,
+  `military_xp`, `military_xp_city`, the empire-wide `unit_xp_all_cities`) and
+  `free_promotion` / `free_promotion_all` / `heals_units` are read when a unit is
+  built (`TurnEngine._structure_unit_xp` / `_grant_free_promotions`) and in the
+  garrison heal (`_healing_rate`). Building XP layers on the *policy* key
+  `new_unit_xp` and can itself cross a promotion threshold. Covered by
+  `tests/sim/test_building_xp.gd`.
 - **Minor unmodelled wonder sub-clauses.** A handful of atmospheric secondary
   effects are not represented: Stonehenge "centers world map", the Colosseum's
   culture-rate happiness, Angkor Wat "allows 3 Priest specialists", and the
