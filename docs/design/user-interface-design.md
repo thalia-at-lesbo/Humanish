@@ -1,3 +1,57 @@
+---
+title: "User Interface — Functional Specification"
+role: design
+summary: >
+  Functional (not aesthetic) specification of the UI contract between the rules engine
+  (src/sim/, src/api/) and the presentation layer (scenes/). Defines the display model
+  (dirty-flag invalidation), the full command vocabulary (controls, unit commands,
+  unit missions), the widget dispatch system, map-targeting modes, popups, selection
+  state, notifications, tooltip/help text generation, and the standard screen inventory.
+  Also documents the SimFacade signal interface (§8.1) and the implemented ControlType
+  enum values (§3.1.1). The scenes/ layer must drive the engine exclusively through
+  these interfaces; nothing in src/sim/ or src/world/ may reference scenes or input.
+audience:
+  - Coding agents implementing or auditing scenes/, src/api/sim_facade.gd
+  - Contributors adding new screens, HUD elements, or command vocabulary
+  - Reviewers checking that a UI feature correctly uses the facade interface
+key_files:
+  - src/api/sim_facade.gd        # public API — apply_command, signals, queries
+  - src/api/commands.gd          # Command factory methods
+  - src/api/selection_state.gd   # active selection (unit / city / tile)
+  - src/api/dirty_flags.gd       # per-region invalidation bit set
+  - src/api/text_gen.gd          # all tooltip/breakdown/help text generation
+  - src/core/ids.gd              # ControlType, UnitCmd, UnitMission, DirtyRegion enums
+  - data/hotkeys.json            # key→ControlType default bindings
+  - scenes/main.gd               # scene root; wires facade signals to screens
+  - scenes/hud/hud.gd            # dirty-flag dispatcher to HUD panels
+  - scenes/hud/selection_panel.gd
+  - scenes/hud/menu_bar.gd       # advisor button bar (§11.1)
+  - scenes/input/input_router.gd # keyboard/mouse → Commands
+  - scenes/screens/             # all secondary screen implementations
+sections:
+  "§1  Roles & three-way split": "sim ↔ UIService interface ↔ presentation host boundary"
+  "§2  Display model":           "Dirty-flag invalidation — DirtyRegion enum, set/clear/rebuild cycle"
+  "§3  Interaction model":       "Input → validated action → ordered command pipeline"
+  "§3.1 Controls":               "Global command vocabulary; §3.1.1 implemented ControlType table (provisional)"
+  "§3.2 Unit commands":          "Direct immediate orders (wake, fortify, promote, disband, gift, load/unload)"
+  "§3.3 Unit missions":          "Queued multi-turn orders; multi-turn go-to persistence"
+  "§4  Widget catalog":          "Uniform {type,data1,data2} dispatch — help-text, action, alt-action, is-link"
+  "§5  Map-targeting modes":     "Interface modes (go-to, ranged attack, airlift, paradrop, etc.)"
+  "§6  Popups":                  "Popup descriptor, construction primitives, functional popup types"
+  "§7  Selection model":         "Active unit/stack or city subject; cycling; camera/focus control"
+  "§8  Messages & notifications":"Event log, turn log, talking-head messages, combat log, pings/signs"
+  "§8.1 Facade signals":         "All 14 SimFacade signals with parameter types (provisional)"
+  "§9  Help text":               "Centralized tooltip/breakdown/encyclopedia text generation (src/api/text_gen.gd)"
+  "§10 Display-gating queries":  "End-turn states, HUD visibility, capability gates, tile/flyout presentation"
+  "§11 Standard screens":        "Full screen inventory with per-screen functional description; §11.1 HUD advisor bar"
+  "§12 Reconstruction checklist":"11-step checklist for reimplementing the full UI contract"
+editorial_rule: >
+  Modify only with explicit user consent. §3.1.1, §8.1, and §11.1 are provisional
+  (implemented but names/values not yet verified against the spec vocabulary). All
+  other sections are authoritative design intent. When adding a new screen, command,
+  or signal, add it to the relevant section and mark it provisional if unverified.
+---
+
 # User Interface — Functional Specification
 
 A functional (not aesthetic) description of the user interface that the game-core module

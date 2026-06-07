@@ -1,3 +1,68 @@
+---
+title: "Game Rules"
+role: design
+summary: >
+  Authoritative behavioural specification for the Humanish 4X simulation engine.
+  Defines every rule the engine enforces: the world model, the turn pipeline, settlement
+  growth and culture, unit movement and combat, the economy, diplomacy, beliefs,
+  wild forces, and win conditions. The sim layer (src/sim/, src/world/) implements
+  these rules exactly; this document is the source of truth when code and spec disagree.
+audience:
+  - Coding agents implementing or auditing src/sim/, src/world/, src/api/
+  - Contributors adding new mechanics or data-driven content
+  - Reviewers checking that a feature matches the design intent
+key_files:
+  - src/sim/turn_engine.gd       # §3 pipeline implementation
+  - src/sim/settlement.gd        # §4 settlement model
+  - src/sim/unit.gd              # §5 unit definition and stances
+  - src/sim/combat.gd            # §5.4 combat resolution
+  - src/sim/combat_apply.gd      # §5.4 state mutation after combat
+  - src/sim/player.gd            # §6 economy / research / policies
+  - src/sim/alliance.gd          # §7 diplomacy / war / espionage
+  - src/sim/beliefs.gd           # §8 religion founding and spread
+  - src/sim/econ_orgs.gd         # §8 economic organizations
+  - src/sim/culture_revolt.gd    # §4.9 cultural city flipping
+  - src/sim/nuclear.gd           # §5.7 nuclear weapons
+  - src/sim/assembly.gd          # §7.2 world-government voting
+  - src/sim/eras.gd              # §2.1 derived era system
+  - src/sim/wild_ai.gd           # §9.1 wild-forces behaviour
+  - src/sim/great_people.gd      # §14 Great People / Golden Ages
+  - data/constants.json          # all tunable numeric constants
+sections:
+  "§1  World model":           "Map & tiles, adjacency, tile output, rivers"
+  "§2  Time, ages, pacing":    "Turn length, eras (§2.1 provisional)"
+  "§3  Turn structure":        "Authoritative world-step / player-step order"
+  "§4  Settlements":           "Growth, output split, production, contentment, wellbeing, culture, conquest (§4.8), cultural revolt (§4.9 provisional), tile maturation (§4.10 provisional)"
+  "§5  Units":                 "Definition, movement, combat strength, combat resolution, XP & upgrades, healing & entrenchment, nuclear weapons (§5.7 provisional), naval blockade (§5.8 provisional)"
+  "§6  Economy & research":    "Treasury, sliders, research graph, policies, specialists & Great People, draft (§6.6 provisional), trade routes (§6.7 provisional)"
+  "§7  Diplomacy & war":       "Alliances, trades, subordination, espionage (§7.1 provisional), world assemblies (§7.2 provisional)"
+  "§8  Beliefs & orgs":        "Religion founding/spread, state religion (§8.1 provisional), missionary spread (§8.2 provisional)"
+  "§9  Wild forces & events":  "Wild spawning, wild-AI behaviour (§9.1 provisional), exploration rewards, scripted events"
+  "§10 Win conditions":        "Last standing, dominance, endgame project, cultural, diplomatic, time"
+  "§11 Environmental":         "Pollution accumulation, flooding, tile degradation"
+  "§12 Configurable data":     "Data-driven constants — what lives in JSON, not in code"
+  "§13 Checklist":             "Minimum viable implementation checklist"
+  "§14 Great People":          "Types, GP points, thresholds, Golden Ages, specialist slots, corporations"
+provisional_sections:
+  - "§2.1  Eras — growth scaling and revolt-era term (placeholder constants)"
+  - "§4.9  Cultural revolt / city flipping — all constants placeholder"
+  - "§4.10 Tile maturation — cottage upgrade rates"
+  - "§5.7  Nuclear weapons — all blast/radiation magnitudes placeholder"
+  - "§5.8  Naval blockade"
+  - "§6.6  Conscription / draft"
+  - "§6.7  Trade routes — yields placeholder"
+  - "§7.1  Espionage — accumulation formula and mission effects"
+  - "§7.2  World assemblies — session cadence, AI voting, resolution effects"
+  - "§8.1  State religion"
+  - "§8.2  Missionary spread"
+  - "§9.1  Wild-forces behaviour — all radii and cooldowns placeholder"
+editorial_rule: >
+  Modify only with explicit user consent. This is the upstream source of truth;
+  the engine grows toward it. When a gap is closed, update the relevant section to
+  remove any "not implemented" qualifier and (if still unverified) keep the
+  Provisional tag. Add new provisional sections for newly implemented subsystems.
+---
+
 # Game Rules — Generic Specification
 
 A precise, implementation-level description of the mechanics for a turn-based,

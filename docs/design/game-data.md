@@ -1,3 +1,68 @@
+---
+title: "Game Data"
+role: design
+summary: >
+  Content tables for all data-driven game entities: technologies, factions, leaders,
+  units, buildings, wonders, civics, religions, resources, terrain, improvements,
+  promotions, Great People, and global constants. Also documents the JSON field
+  schemas for units.json, structures.json, improvements.json, and promotions.json
+  (§19), and the serialized state fields for the Player, Settlement, and Unit engine
+  entities (§19.5). The JSON files in data/ are authoritative for numeric values;
+  this document describes their intended design-level content.
+audience:
+  - Coding agents reading or modifying data/*.json
+  - Contributors adding new units, buildings, technologies, civics, or promotions
+  - Reviewers checking data tables against the design intent
+key_files:
+  - data/units.json              # unit definitions (§5; field schema §19.1)
+  - data/structures.json         # buildings and wonders (§6–§7; field schema §19.2)
+  - data/technologies.json       # tech tree (§2)
+  - data/policies.json           # civics / policies (§8)
+  - data/leaders_traits.json     # factions, leaders, traits (§3–§4)
+  - data/promotions.json         # promotion definitions (§13; field schema §19.4)
+  - data/improvements.json       # tile improvements (§12; field schema §19.3)
+  - data/terrains.json           # terrain types (§11)
+  - data/resources.json          # strategic, luxury, and bonus resources (§10)
+  - data/constants.json          # global numeric constants (§15)
+  - data/beliefs.json            # religion belief types
+  - data/econ_orgs.json          # corporation definitions (§14.6)
+  - data/resolutions.json        # assembly resolution catalogue (§18.3)
+  - data/win_conditions.json     # win condition definitions (§16)
+  - data/ages.json               # era definitions and growth scale (§1, §2.1)
+  - data/paces.json              # game pace multipliers (§15.6)
+  - data/world_sizes.json        # map size presets (§15.8)
+  - data/difficulties.json       # difficulty level modifiers (§15.9)
+  - data/map_types.json          # map generation type configurations
+  - data/hotkeys.json            # rebindable key→ControlType bindings
+  - data/events.json             # scripted/random event definitions (§9)
+  - src/core/data_db.gd          # loads, validates, and exposes all tables
+sections:
+  "§1   Eras":                   "Era index table (Ancient–Future) and growth-scale constants"
+  "§2   Technologies":           "Full tech tree by era with costs and prerequisites"
+  "§3   Factions":               "All 34 playable societies with leaders and starting techs"
+  "§4   Leaders & Traits":       "11 traits and 52 leaders; trait mechanical effects"
+  "§5   Units":                  "Non-combat, land, naval, and air units; faction-unique units"
+  "§6   Buildings":              "Standard, religion-specific, Great Person, and faction-unique buildings"
+  "§7   Wonders":                "World wonders and national wonders with costs and effects"
+  "§8   Civics":                 "Five civic categories, 26 policies, mechanical effects per civic"
+  "§9   Religions":              "Seven belief types and their founding/spread rules"
+  "§10  Resources":              "Strategic, luxury, and bonus resources with yields"
+  "§11  Terrain & Features":     "Base terrain types, landform modifiers, and overlaid features"
+  "§12  Improvements":           "Tile improvements, build times, yields, and maturation chain"
+  "§13  Promotions":             "All promotion lines with prerequisites and effects"
+  "§14  Great People":           "GP types, thresholds, Golden Ages, specialist slots, corporations"
+  "§15  Global Constants":       "Combat formulas, growth formulas, healing rates, difficulty scales"
+  "§16  Victory Conditions":     "Six win condition types and their trigger criteria"
+  "§17  Spaceship Parts":        "Space Race component list"
+  "§18  Assembly & Resolutions": "World-government assembly mechanics and resolution catalogue (provisional)"
+  "§19  Data field reference":   "JSON field schemas (§19.1–§19.4) and serialized entity fields (§19.5) — provisional"
+editorial_rule: >
+  Modify only with explicit user consent. The JSON tables in data/ are the
+  authoritative numeric values; this document describes design intent. When adding
+  a new data entry, add the corresponding row here. When adding a new JSON field,
+  add it to the relevant §19 field-reference subsection.
+---
+
 # Game Data Reference
 
 > Technology prerequisites are approximate and should be verified against authoritative data files
