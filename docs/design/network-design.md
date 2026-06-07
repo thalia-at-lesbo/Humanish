@@ -1,3 +1,50 @@
+---
+title: "Network Design — Remote Multiplayer"
+role: design
+summary: >
+  Documents the WebSocket-based client-server multiplayer architecture: transport
+  choice, message protocol (NetProtocol), full-state handoff turn model, server
+  autosave, headless server mode, in-game host mode, client join flow, and the
+  off-turn bootstrap that lets late joiners enter mid-game. The facade seam
+  (set_remote_submit_handler) is the only engine touchpoint; nothing in sim/ or
+  world/ references the network layer.
+audience:
+  - Coding agents implementing or auditing src/net/, scenes/net/
+  - Contributors adding new network message types or changing the turn protocol
+  - Operators running a dedicated headless server
+key_files:
+  - src/net/net_protocol.gd      # message-type constants + encode/decode
+  - src/net/net_config.gd        # CLI flag parser for headless server
+  - scenes/net/net_server.gd     # authoritative server — turn loop, autosave
+  - scenes/net/net_client.gd     # client transport + in-game facade glue
+  - scenes/net/server_runner.gd  # headless entry point (extends SceneTree)
+  - scenes/net/server_setup.gd   # in-game host setup screen
+  - scenes/net/multiplayer_setup.gd # client connect screen
+  - run_server.sh                # convenience wrapper for headless server
+  - tests/net/test_multiplayer_loopback.gd  # live socket CI gate
+  - tests/manual/loopback_smoke.gd          # manual smoke test
+sections:
+  "At a glance":        "Architecture diagram — authoritative server, round-robin turns, WebSocket"
+  "Transport":          "Why WebSocket: TCP, single port, no NAT/firewall setup, Godot 3 built-in"
+  "The wall":           "How net/ stays a facade client — sim/world/ are never touched"
+  "Message protocol":   "NetProtocol: {v,t,d} frames; message type constants; encode/decode"
+  "Turn model":         "Full-state handoff; server loads client submit; end-of-turn pipeline; _drive() loop"
+  "Trust model":        "Server is authoritative; client submit adopted via load_save"
+  "Autosave":           "player_turn_started signal triggers save every turn; --save required"
+  "Headless server":    "run_server.sh / server_runner.gd; all CLI flags (--save, --port, --players, --ai, --load, --world, --map)"
+  "In-game host":       "server_setup.gd — authoritative NetServer in-process; New Game or Load path"
+  "Client mode":        "multiplayer_setup.gd → NetClient → init_with_facade; off-turn bootstrap"
+  "File map":           "Source file listing with one-line role descriptions"
+  "Testing":            "test_multiplayer_loopback.gd (live sockets, CI); loopback_smoke.gd (manual)"
+  "Future work":        "Simultaneous turns, reconnect, spectator, relay server"
+editorial_rule: >
+  Modify only with explicit user consent. This is the authoritative design for the
+  multiplayer layer. When adding a new message type, add it to the protocol section
+  and update the file map. The "Adding a network message" pattern (NetProtocol
+  constant + server _handle_frame case + client _handle_frame case + test) is the
+  required extension path.
+---
+
 # Network Design — Remote Multiplayer
 
 How Humanish plays over the internet. This covers the transport choice, the

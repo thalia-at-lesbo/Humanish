@@ -1,3 +1,41 @@
+---
+title: "Advanced Debugging"
+role: design
+summary: >
+  Documents the developer debug subsystem: DebugLog (capped ring buffer with stdout
+  mirror), DebugConsole (command engine and facade client), the terminal console
+  (stdin reader on a worker thread), and the in-game debug overlay (~ key, live info
+  pane + embedded console). Everything is gated to interactive debug builds — inert
+  under release exports and the headless GUT runner. The sim/world/ wall is preserved:
+  debug tools are facade clients, not engine internals.
+audience:
+  - Developers running an interactive debug build during development
+  - Coding agents adding new debug console commands or log sources
+  - Contributors extending the debug overlay with new view helpers
+key_files:
+  - src/core/debug_log.gd             # DebugLog — capped ring buffer, stdout mirror
+  - src/api/debug_console.gd          # DebugConsole — command engine, facade client
+  - scenes/debug/terminal_console.gd  # stdin reader, threads line to main thread
+  - scenes/debug/debug_overlay.gd     # ~ overlay — info pane + embedded console + view helpers
+  - scenes/main.gd                    # _wire_debug() — builds shared log+console, mirrors signals
+  - tests/api/test_debug_console.gd   # headless tests for console commands
+sections:
+  "§1  When it is active":   "OS.is_debug_build() + not headless/GUT — never ships or affects CI"
+  "§2  Components":          "DebugLog, DebugConsole, terminal_console.gd, debug_overlay.gd"
+  "§3  Extra logging":       "SimFacade signals mirrored into DebugLog via _wire_debug()"
+  "§4  Console engine":      "DebugConsole._dispatch(); read commands (query facade); write commands (mutate + mark_all)"
+  "§4  Command reference":   "Full list of built-in commands: set, get, tech, gold, pop, heal, kill, war, peace, setturn, win, seed, hash, help"
+  "§5  Terminal console":    "terminal_console.gd — stdin on worker thread, call_deferred to main; _is_interactive_debug() gate"
+  "§6  In-game debug menu":  "debug_overlay.gd — ~ to open, Escape to close; info pane + console; reveal/fog view helpers"
+  "§7  Tests":               "test_debug_console.gd — headless coverage of every command"
+  "§8  Extending it":        "How to add a new console command; how to add a presentation-only view helper"
+editorial_rule: >
+  Modify only with explicit user consent. This document is authoritative for the
+  debug subsystem design. When adding a new console command, add it to §4 command
+  reference and cover it in test_debug_console.gd. Presentation-only helpers
+  (camera/fog) go in debug_overlay.gd, not in DebugConsole.
+---
+
 # Advanced Debugging
 
 Developer-facing debugging tools for Humanish: extra event logging, a runtime

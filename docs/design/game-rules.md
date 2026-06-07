@@ -1,3 +1,68 @@
+---
+title: "Game Rules"
+role: design
+summary: >
+  Authoritative behavioural specification for the Humanish 4X simulation engine.
+  Defines every rule the engine enforces: the world model, the turn pipeline, settlement
+  growth and culture, unit movement and combat, the economy, diplomacy, beliefs,
+  wild forces, and win conditions. The sim layer (src/sim/, src/world/) implements
+  these rules exactly; this document is the source of truth when code and spec disagree.
+audience:
+  - Coding agents implementing or auditing src/sim/, src/world/, src/api/
+  - Contributors adding new mechanics or data-driven content
+  - Reviewers checking that a feature matches the design intent
+key_files:
+  - src/sim/turn_engine.gd       # §3 pipeline implementation
+  - src/sim/settlement.gd        # §4 settlement model
+  - src/sim/unit.gd              # §5 unit definition and stances
+  - src/sim/combat.gd            # §5.4 combat resolution
+  - src/sim/combat_apply.gd      # §5.4 state mutation after combat
+  - src/sim/player.gd            # §6 economy / research / policies
+  - src/sim/alliance.gd          # §7 diplomacy / war / espionage
+  - src/sim/beliefs.gd           # §8 religion founding and spread
+  - src/sim/econ_orgs.gd         # §8 economic organizations
+  - src/sim/culture_revolt.gd    # §4.9 cultural city flipping
+  - src/sim/nuclear.gd           # §5.7 nuclear weapons
+  - src/sim/assembly.gd          # §7.2 world-government voting
+  - src/sim/eras.gd              # §2.1 derived era system
+  - src/sim/wild_ai.gd           # §9.1 wild-forces behaviour
+  - src/sim/great_people.gd      # §14 Great People / Golden Ages
+  - data/constants.json          # all tunable numeric constants
+sections:
+  "§1  World model":           "Map & tiles, adjacency, tile output, rivers"
+  "§2  Time, ages, pacing":    "Turn length, eras (§2.1 provisional)"
+  "§3  Turn structure":        "Authoritative world-step / player-step order"
+  "§4  Settlements":           "Growth, output split, production, contentment, wellbeing, culture, conquest (§4.8), cultural revolt (§4.9 provisional), tile maturation (§4.10 provisional)"
+  "§5  Units":                 "Definition, movement, combat strength, combat resolution, XP & upgrades, healing & entrenchment, nuclear weapons (§5.7 provisional), naval blockade (§5.8 provisional)"
+  "§6  Economy & research":    "Treasury, sliders, research graph, policies, specialists & Great People, draft (§6.6 provisional), trade routes (§6.7 provisional)"
+  "§7  Diplomacy & war":       "Alliances, trades, subordination, espionage (§7.1 provisional), world assemblies (§7.2 provisional)"
+  "§8  Beliefs & orgs":        "Religion founding/spread, state religion (§8.1 provisional), missionary spread (§8.2 provisional)"
+  "§9  Wild forces & events":  "Wild spawning, wild-AI behaviour (§9.1 provisional), exploration rewards, scripted events"
+  "§10 Win conditions":        "Last standing, dominance, endgame project, cultural, diplomatic, time"
+  "§11 Environmental":         "Pollution accumulation, flooding, tile degradation"
+  "§12 Configurable data":     "Data-driven constants — what lives in JSON, not in code"
+  "§13 Checklist":             "Minimum viable implementation checklist"
+  "§14 Great People":          "Types, GP points, thresholds, Golden Ages, specialist slots, corporations"
+provisional_sections:
+  - "§2.1  Eras — growth scaling and revolt-era term (placeholder constants)"
+  - "§4.9  Cultural revolt / city flipping — all constants placeholder"
+  - "§4.10 Tile maturation — cottage upgrade rates"
+  - "§5.7  Nuclear weapons — all blast/radiation magnitudes placeholder"
+  - "§5.8  Naval blockade"
+  - "§6.6  Conscription / draft"
+  - "§6.7  Trade routes — yields placeholder"
+  - "§7.1  Espionage — accumulation formula and mission effects"
+  - "§7.2  World assemblies — session cadence, AI voting, resolution effects"
+  - "§8.1  State religion"
+  - "§8.2  Missionary spread"
+  - "§9.1  Wild-forces behaviour — all radii and cooldowns placeholder"
+editorial_rule: >
+  Modify only with explicit user consent. This is the upstream source of truth;
+  the engine grows toward it. When a gap is closed, update the relevant section to
+  remove any "not implemented" qualifier and (if still unverified) keep the
+  Provisional tag. Add new provisional sections for newly implemented subsystems.
+---
+
 # Game Rules — Generic Specification
 
 A precise, implementation-level description of the mechanics for a turn-based,
@@ -280,14 +345,13 @@ regenerates a fixed amount each owner turn, up to that maximum.
   settlements, which destroys it exactly as razing does.
 
 ### 4.9 Cultural revolt and city flipping (provisional)
-> **⚠️ Provisional — preliminary, not verified.** This subsection is a first-pass model of
-> capturing a settlement through **cultural pressure** rather than combat. It is based only on
-> a preliminary reading of the reference game's behaviour and has **not** been checked against
-> the actual mechanics, nor is it implemented yet. The named factors, the 10% check rate, the
-> revolt-power and garrison-strength formulas, and all constants below are placeholders to be
-> verified and tuned before relying on them. (All quantities are integer math per the engine
-> invariants; the "ratios" below are expressed as integer percentages, e.g. a culture ratio of
-> 100–200.)
+> **⚠️ Provisional — implemented, not verified.** This subsection documents the cultural-revolt
+> model as implemented in `src/sim/culture_revolt.gd` (called from the owner's player step via
+> `TurnEngine`). The named factors, the 10% check rate, the revolt-power and garrison-strength
+> formulas, and all constants below are placeholders drawn from a preliminary reading of the
+> reference game; they have **not** been checked against the actual mechanics and are expected to
+> be tuned. (All quantities are integer math per the engine invariants; the "ratios" below are
+> expressed as integer percentages, e.g. a culture ratio of 100–200.)
 
 Independently of military conquest (§4.8), a settlement may **flip** to a rival player when
 that rival's accumulated cultural influence (§4.7) on the settlement's tile exceeds the
@@ -313,20 +377,37 @@ pressure as well as against assault.
     does — belief acts as a cultural amplifier/dampener;
   * **War modifier** = the garrison's contribution doubles while the owner is at war (war status
     sharply raises rebellion risk; see the garrison term below).
-* **Garrison strength** = `1 + Σ(garrison value of each military unit stationed in the
-  settlement)`, where each unit's garrison value scales with its type (placeholder: early units
-  ≈ 3, late-era units ≈ 16). While the owner is at war this term is doubled (per the war
-  modifier above).
-* **Outcome.** If revolt power exceeds garrison strength the settlement **changes hands** to the
-  challenging rival. A **non-barbarian** settlement may require **multiple** successful revolts
-  before it actually flips (a revolt counter that must accumulate), whereas barbarian/wild
-  settlements flip on the first. A game setting governs whether a recently **conquered**
-  settlement (still in revolt, §4.8) is eligible to flip immediately or is shielded until its
-  occupation ends.
+* **Garrison strength** = `revolt_garrison_base + Σ(base_strength of each non-civilian military
+  unit stationed in the settlement)`. Unlike the earlier placeholder, garrison value is the
+  unit's actual `base_strength` from data, so veteran or late-era units defend more effectively.
+  While the owner is **at war** with the rival's alliance this total is multiplied by
+  `revolt_war_garrison_multiplier` (placeholder: ×2).
+* **Outcome.** If revolt power exceeds garrison strength the settlement accrues one
+  **revolt success** on `Settlement.revolt_progress`. A **non-barbarian** settlement requires
+  `revolt_required_successes` (placeholder: 2) accumulated successes before it actually flips —
+  so cultural pressure builds over multiple rounds. A **wild/barbarian** settlement
+  (`owner_player_id == -2`) flips on the first success. A freshly-conquered settlement still
+  under occupation (`revolt_turns > 0`) is **shielded** from revolt progress by default
+  (`revolt_shield_during_occupation`; configurable), and its counter is reset each skipped turn.
 
-When a settlement flips, ownership transfers exactly as a kept capture (§4.8) — the same
-queue/specialist clearing, siege-health restore, and Palace handling apply — but no combat or
-attacking stack is involved.
+When a settlement flips, ownership transfers exactly as a kept capture (§4.8) — production
+queue, specialists, and worked tiles cleared; siege HP restored; Palace stripped; new
+occupation revolt period set to `revolt_base_turns + population / 2` — but no combat or
+attacking stack is involved. The flip is queued on `gs.pending_flips` and drained by the
+facade into a `city_flipped` signal and player notification.
+
+**Constants (`data/constants.json`):**
+
+| Key | Placeholder value | Meaning |
+|-----|-------------------|---------|
+| `revolt_check_chance` | 10 | Percent chance an eligible settlement is checked each turn |
+| `revolt_base_per_pop` | 2 | Population multiplier in the revolt-power base |
+| `revolt_garrison_base` | 1 | Minimum garrison strength (before unit contributions) |
+| `revolt_war_garrison_multiplier` | 2 | Multiplier applied to garrison while owner is at war |
+| `revolt_state_belief_multiplier` | 2 | Amplifier/dampener for state belief mismatch |
+| `revolt_required_successes` | 2 | Successful revolts needed for a non-barbarian city to flip |
+| `revolt_shield_during_occupation` | 1 (true) | Shield recently conquered cities from flipping |
+| `revolt_base_turns` | 3 | Base occupation turns after a cultural flip |
 
 ### 4.10 Tile improvement maturation (provisional)
 
