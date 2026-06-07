@@ -268,6 +268,12 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 		total_prod += Fixed.scale(total_prod,
 			PolicyEffects.sum_int(player, db, "capital_production"))
 
+	# Anarchy (§8): during the interregnum after switching state religion the
+	# economy seizes up — settlements yield no commerce, so no gold, research,
+	# culture, or intelligence accrues. Food and production are unaffected.
+	if player != null and player.anarchy_turns > 0:
+		total_commerce = 0
+
 	s.output_food       = total_food
 	s.output_production = total_prod
 	s.output_commerce   = total_commerce
@@ -341,9 +347,13 @@ static func _update_contentment(gs: GameState, s: Settlement, player: Player, db
 	# Size-related comfort (base 3 for first city)
 	pos += max(0, 3 - (s.population / 4))
 
-	# Structures
+	# Structures. A structure that requires the state religion (e.g. Cathedrals)
+	# only comforts the city while that religion is the player's adopted one and is
+	# present here (§8).
 	for struct_id in s.structures:
 		var struct: Dictionary = db.get_structure(struct_id)
+		if not _structure_effect_active(db, struct_id, s, player):
+			continue
 		pos += int(struct.get("happiness_bonus", 0))
 
 	# Adopted belief comfort (§8)
@@ -482,6 +492,19 @@ static func _is_military_unit(db: DataDB, unit_id: String) -> bool:
 	var cls: String = db.get_unit(unit_id).get("classification", "")
 	return cls != "" and cls != "civilian" and cls != "great_person"
 
+# Whether a structure's gameplay effects are live in this settlement (§8). A
+# structure flagged `requires_state_religion` (the Cathedral tier) only takes
+# effect while the city follows the player's adopted state religion; everything
+# else is always active.
+static func _structure_effect_active(db: DataDB, struct_id: String,
+		s: Settlement, player: Player) -> bool:
+	var st: Dictionary = db.get_structure(struct_id)
+	if not bool(st.get("effects", {}).get("requires_state_religion", false)):
+		return true
+	if player == null or player.state_religion == "":
+		return false
+	return s.belief_id == player.state_religion
+
 static func _item_cost(item: Dictionary, db: DataDB, player: Player,
 		pace: Dictionary) -> int:
 	var pace_scale: int = int(pace.get("build_scale", 100))
@@ -513,11 +536,11 @@ static func _complete_item(gs: GameState, s: Settlement,
 			u.movement_total = int(udata.get("movement", 200))
 			u.movement_left = u.movement_total
 			# Civic starting experience for newly trained military units (§8):
-			# Vassalage's flat bonus, plus Theocracy's bonus when the city has a
-			# state religion (modelled as an adopted belief).
+			# Vassalage's flat bonus, plus Theocracy's bonus when the unit is raised
+			# in a city that follows the player's adopted state religion.
 			if _is_military_unit(gs.db, iid):
 				var xp: int = PolicyEffects.sum_int(player, gs.db, "new_unit_xp")
-				if s.belief_id != "":
+				if player.state_religion != "" and s.belief_id == player.state_religion:
 					xp += PolicyEffects.sum_int(player, gs.db, "state_religion_unit_xp")
 				u.experience = xp
 			gs.units.append(u)
@@ -883,6 +906,8 @@ static func _apply_intelligence(gs: GameState, player: Player) -> void:
 static func _tick_states(gs: GameState, player: Player) -> void:
 	if player.transition_turns > 0:
 		player.transition_turns -= 1
+	if player.anarchy_turns > 0:
+		player.anarchy_turns -= 1
 	if player.celebration_turns > 0:
 		player.celebration_turns -= 1
 	# A running Golden Age counts down one turn (§14.4).

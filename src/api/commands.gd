@@ -72,6 +72,13 @@ static func set_policy(player_id: int, category: String,
 		"policy_id": policy_id
 	}
 
+static func set_state_religion(player_id: int, belief_id: String) -> Dictionary:
+	return {
+		"type": IDs.CommandType.SET_STATE_RELIGION,
+		"player_id": player_id,
+		"belief_id": belief_id
+	}
+
 static func declare_war(player_id: int,
 		target_alliance_id: int) -> Dictionary:
 	return {

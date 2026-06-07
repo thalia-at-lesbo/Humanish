@@ -37,6 +37,7 @@ static func take_turn(facade, player_id: int) -> void:
 	manage_economy(facade, player_id)
 	manage_research(facade, player_id)
 	manage_civics(facade, player_id)
+	manage_religion(facade, player_id)
 	manage_production(facade, player_id)
 	manage_units(facade, player_id)
 
@@ -132,6 +133,27 @@ static func manage_civics(facade, player_id: int) -> void:
 	for cat in latest:
 		if player.policies.get(cat, "") != latest[cat]:
 			facade.apply_command(Commands.set_policy(player_id, cat, latest[cat]))
+
+# ── State religion: adopt the religion the empire already follows (§8) ──────────
+
+# The AI adopts a state religion once one is present in its cities and it has none.
+# It never switches afterward, so it never pays the anarchy cost — a deliberately
+# conservative policy that still exercises the state-religion path. The choice is
+# the lowest-id belief present (deterministic, no RNG).
+static func manage_religion(facade, player_id: int) -> void:
+	var gs = facade.get_state()
+	var player = gs.get_player(player_id)
+	if player == null or player.state_religion != "":
+		return
+	var present = {}
+	for s in gs.settlements:
+		if s.owner_player_id == player_id and s.belief_id != "":
+			present[s.belief_id] = true
+	if present.empty():
+		return
+	var ids = present.keys()
+	ids.sort()
+	facade.apply_command(Commands.set_state_religion(player_id, ids[0]))
 
 # ── Cities: rotate through every buildable item, cheapest first ────────────────
 

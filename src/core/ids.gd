@@ -81,7 +81,9 @@ enum CommandType {
     SET_TILE_WORKED = 45,
     SET_CITIZEN_AUTOMATION = 46,
     # City conquest (§4.8): voluntarily disband/raze an owned city.
-    DISBAND_CITY = 47
+    DISBAND_CITY = 47,
+    # State religion (§8): adopt/switch the player's empire-wide religion ("" = none).
+    SET_STATE_RELIGION = 48
 }
 
 # Win condition types

@@ -474,6 +474,34 @@ organization.
   consume input resources to produce output in member settlements; spreading them costs
   treasury. Competing organizations cannot coexist in the same settlement.
 
+### 8.1 State religion (provisional)
+
+> **⚠️ Provisional — preliminary, not verified.** This subsection is a first-pass model of
+> the **player-level state religion** and has **not** been checked against the reference
+> game's mechanics. The anarchy length, the exact set of effects it gates, and the adoption
+> eligibility rule are placeholders to be verified and tuned before relying on them.
+
+Distinct from a settlement's per-city belief (§8), each **player** may adopt one empire-wide
+**state religion** — the belief the civilisation officially follows. Rules:
+
+* **No religion to start.** Every player begins with **no state religion**, and "none" is
+  always a valid selection. A player may adopt only a belief that is **founded** and present
+  in at least one of their own settlements.
+* **Switching causes anarchy.** Changing the state religion away from an existing one (to a
+  different religion *or* back to none) plunges the player into **anarchy** for a fixed number
+  of turns (`state_religion_anarchy_turns`): while it lasts the player's settlements yield
+  **no commerce** — no gold, research, culture, or intelligence (food and production are
+  unaffected). The **first** adoption (from none) is **free**, and a **Spiritual** leader
+  never suffers anarchy from a switch.
+* **Effects.** The state religion is what gates religion-dependent bonuses: a **Cathedral**
+  (and its religious-building tier marked `requires_state_religion`) only comforts a city
+  whose religion is the player's state religion; **Theocracy** grants its new-unit experience
+  bonus only to units raised in such cities, and its non-state-spread block keeps other
+  religions from spreading into the player's cities.
+* **Selection.** The state religion is chosen at runtime through the Religion advisor screen
+  (§3.1 `OPEN_RELIGION`), which lists "none" plus every religion present in the player's
+  cities; the AI adopts the religion its empire already follows but never switches afterward.
+
 ---
 
 ## 9. Wild forces, exploration rewards, and events

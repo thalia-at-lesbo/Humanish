@@ -235,6 +235,8 @@ func apply_command(cmd: Dictionary) -> bool:
 			return _cmd_set_research(cmd)
 		IDs.CommandType.SET_POLICY:
 			return _cmd_set_policy(cmd)
+		IDs.CommandType.SET_STATE_RELIGION:
+			return _cmd_set_state_religion(cmd)
 		IDs.CommandType.DECLARE_WAR:
 			return _cmd_declare_war(cmd)
 		IDs.CommandType.MAKE_PEACE:
@@ -718,6 +720,36 @@ func _cmd_set_policy(cmd: Dictionary) -> bool:
 	p.policies[cat] = pol_id
 	if transition > 0:
 		p.transition_turns = transition
+	_dirty.set_dirty(IDs.DirtyRegion.FULL_SCREENS)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+	return true
+
+# Adopt or switch the player's empire-wide state religion (§8). "" means "no state
+# religion" (always a legal choice). A non-empty religion must be a founded belief
+# that is present in at least one of the player's settlements. Switching away from
+# an existing state religion triggers anarchy (no commerce while it lasts) — but the
+# first adoption (from none) is free, as is any switch for a Spiritual leader.
+func _cmd_set_state_religion(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var belief_id: String = str(cmd.get("belief_id", ""))
+	if belief_id == p.state_religion:
+		return false  # no change
+	if belief_id != "":
+		if not _gs.founded_beliefs.has(belief_id):
+			return false
+		var present: bool = false
+		for s in _gs.settlements:
+			if s.owner_player_id == p.id and s.belief_id == belief_id:
+				present = true
+				break
+		if not present:
+			return false
+	# Anarchy on a real switch (not the first adoption), unless the leader is Spiritual.
+	if p.state_religion != "" and not ("spiritual" in p.traits):
+		p.anarchy_turns = _db.get_constant("state_religion_anarchy_turns", 1)
+	p.state_religion = belief_id
 	_dirty.set_dirty(IDs.DirtyRegion.FULL_SCREENS)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
 	return true

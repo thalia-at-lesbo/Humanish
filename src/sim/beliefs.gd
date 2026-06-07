@@ -62,6 +62,16 @@ static func spread_all(game_state, rng: RNG) -> void:
 				var dist: int = game_state.map.distance(s.x, s.y, other.x, other.y)
 				if dist <= 3:
 					if rng.rand_bool_percent(max(1, spread_chance - dist * 5)):
-						if s.belief_id == "":
+						if s.belief_id == "" and not _spread_blocked(game_state, db, s, belief_id):
 							s.belief_id = belief_id
 						break
+
+# Theocracy's `blocks_nonstate_spread` flag (§8): a settlement whose owner runs
+# that civic with an adopted state religion rejects any other religion trying to
+# spread in. Beliefs matching the owner's state religion (and all other owners)
+# spread freely.
+static func _spread_blocked(game_state, db: DataDB, s, belief_id: String) -> bool:
+	var owner: Player = game_state.get_player(s.owner_player_id)
+	if owner == null or owner.state_religion == "" or belief_id == owner.state_religion:
+		return false
+	return PolicyEffects.has_flag(owner, db, "blocks_nonstate_spread")

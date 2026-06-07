@@ -391,12 +391,24 @@ func test_theocracy_state_religion_unit_xp() -> void:
 	var gs = make_gs(1)
 	var p = gs.get_player(1)
 	var s = make_settlement(gs, 1, 5, 5, 3)
-	s.belief_id = "buddhism"  # a state religion is present
+	s.belief_id = "buddhism"
+	p.state_religion = "buddhism"  # the city follows the player's state religion
 	p.policies = {"religion": "theocracy"}  # state_religion_unit_xp: 2
 	TurnEngine._complete_item(gs, s, p, {"type": "unit", "id": "warrior"})
 	var built = gs.units[gs.units.size() - 1]
 	assert_eq(built.experience, 2,
-		"Theocracy grants +2 XP to units built with a state religion")
+		"Theocracy grants +2 XP to units built in a state-religion city")
+
+func test_theocracy_no_xp_without_state_religion() -> void:
+	var gs = make_gs(1)
+	var p = gs.get_player(1)
+	var s = make_settlement(gs, 1, 5, 5, 3)
+	s.belief_id = "buddhism"  # present, but not adopted as the state religion
+	p.policies = {"religion": "theocracy"}
+	TurnEngine._complete_item(gs, s, p, {"type": "unit", "id": "warrior"})
+	var built = gs.units[gs.units.size() - 1]
+	assert_eq(built.experience, 0,
+		"Theocracy grants no XP when the city's religion is not the state religion")
 
 # ── Great Person rate ────────────────────────────────────────────────────────
 
