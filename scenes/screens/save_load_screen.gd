@@ -130,7 +130,11 @@ func _on_save() -> void:
 	if _facade == null:
 		return
 	_write_save(_default_save_name() + ".sav")
-	rebuild()
+	# Defer the rebuild: it frees every child (incl. the button that emitted this
+	# `pressed` signal), and freeing a node mid-emit crashes Godot 3 ("Object was
+	# freed while a signal is being emitted from it"). Deferring lets the signal
+	# finish first, then rebuilds on the next idle frame.
+	call_deferred("rebuild")
 
 # A sensible default file name (current turn) shown as the field's placeholder and
 # used by Quick Save.
@@ -148,7 +152,7 @@ func _on_save_named() -> void:
 	if base == "":
 		base = _default_save_name()
 	_write_save(base + ".sav")
-	rebuild()
+	call_deferred("rebuild")   # deferred — see _on_save() for why
 
 # Pressing Enter in the field saves too.
 func _on_save_named_text(_text: String) -> void:

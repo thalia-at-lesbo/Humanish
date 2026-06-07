@@ -78,6 +78,29 @@ func test_named_save_sanitizes_and_defaults() -> void:
 	assert_true(def in sl._list_saves(), "A blank name falls back to the default")
 	Directory.new().remove(sl.SAVE_DIR + def)
 
+func _find_button(node, text):
+	for c in node.get_children():
+		if c is Button and c.text == text:
+			return c
+		var found = _find_button(c, text)
+		if found != null:
+			return found
+	return null
+
+func test_pressing_save_does_not_free_widget_mid_signal() -> void:
+	# Regression: _on_save* rebuilt synchronously, freeing the very button that was
+	# emitting `pressed` — Godot 3 then aborts ("Object was freed while a signal is
+	# being emitted from it"). The rebuild must be deferred so the press is safe.
+	var sl = _screen(setup_facade(98))
+	sl.show_screen()
+	var btn = _find_button(sl, "Save")
+	assert_not_null(btn, "the named-save button exists")
+	btn.emit_signal("pressed")
+	assert_true(is_instance_valid(btn),
+		"the Save button is not freed during its own press (rebuild is deferred)")
+	yield(get_tree(), "idle_frame")   # flush the deferred rebuild
+	Directory.new().remove(sl.SAVE_DIR + sl._default_save_name() + ".sav")
+
 func test_rebuild_is_synchronous_and_replaces_content() -> void:
 	# rebuild() must not leave stale children behind (it once deferred frees and
 	# yielded a frame, which flashed the old widgets / a missing backdrop).
