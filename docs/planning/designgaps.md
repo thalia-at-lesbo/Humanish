@@ -150,6 +150,9 @@ subsystem this build does not have:
 - **Espionage verbs `sabotage` / `destroy` / `steal plans` as *unit missions*** —
   the mechanic exists at alliance scope via `ESPIONAGE_MISSION`; a spy-unit-on-tile
   mission model is unbuilt.
+- (`SPREAD_BELIEF` is now built: a missionary unit on a city tile spreads the
+  player's religion via the `SPREAD_BELIEF` command — see the missionary
+  subsystem.)
 - **`draft` (Nationhood) and `establish trade route`** — unbuilt mechanics already
   tracked in §2 (inert policy effects).
 

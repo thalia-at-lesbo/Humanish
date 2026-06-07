@@ -221,6 +221,19 @@ static func mission_sea_patrol(player_id: int, unit_id: int) -> Dictionary:
 static func mission_clean_fallout(player_id: int, unit_id: int) -> Dictionary:
 	return {"type": IDs.CommandType.MISSION_CLEAN_FALLOUT, "player_id": player_id, "unit_id": unit_id}
 
+# ── Missionary belief spread (§8) ─────────────────────────────────────────────
+
+# Spread the missionary's religion to the settlement on its tile; consumes the
+# missionary on success.
+static func spread_belief(player_id: int, unit_id: int,
+		settlement_id: int) -> Dictionary:
+	return {
+		"type": IDs.CommandType.SPREAD_BELIEF,
+		"player_id": player_id,
+		"unit_id": unit_id,
+		"settlement_id": settlement_id
+	}
+
 # ── Draft / conscription (§6.4) ───────────────────────────────────────────────
 
 # Conscript a military unit from a city's population (requires the can_draft civic).

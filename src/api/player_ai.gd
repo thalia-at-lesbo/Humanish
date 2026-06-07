@@ -202,6 +202,10 @@ static func _sorted_options(gs, s, player) -> Array:
 			continue
 		if not _tech_ok(u.get("tech_required", null), player):
 			continue
+		# Religion-spreaders (missionaries) need a religion plus either a monastery
+		# (trains_missionaries) or the Organized Religion civic (§8).
+		if "requires_religion" in u.get("tags", []) and not _can_train_missionary(gs, s, player):
+			continue
 		var item_u: Dictionary = {"type": "unit", "id": uid}
 		opts.append({"type": "unit", "id": uid,
 			"cost": TurnEngine._item_cost(item_u, db, player, pace)})
@@ -329,3 +333,23 @@ static func _move_random(facade, gs, u, player_id: int) -> void:
 # A tech requirement is satisfied when it is absent/empty or the player knows it.
 static func _tech_ok(req, player) -> bool:
 	return req == null or req == "" or player.has_tech(str(req))
+
+# True when a city can train missionaries (§8): the player must have a religion to
+# spread, and the city must hold a `trains_missionaries` structure (Monastery) or
+# the player must run the Organized Religion civic (missionary_without_monastery).
+static func _can_train_missionary(gs, s, player) -> bool:
+	var db = gs.db
+	var has_religion: bool = player.state_religion != "" or s.belief_id != ""
+	if not has_religion:
+		for bid in gs.founded_beliefs:
+			if int(gs.founded_beliefs[bid]) == player.id:
+				has_religion = true
+				break
+	if not has_religion:
+		return false
+	if PolicyEffects.has_flag(player, db, "missionary_without_monastery"):
+		return true
+	for sid in s.structures:
+		if db.get_structure(sid).get("effects", {}).get("trains_missionaries", false):
+			return true
+	return false

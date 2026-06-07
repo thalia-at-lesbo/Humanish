@@ -91,7 +91,9 @@ enum CommandType {
     # Clean radioactive fallout off a worker's tile (§5.7/§11).
     MISSION_CLEAN_FALLOUT = 51,
     # Conscript a military unit from a city's population (§6.4 Nationhood).
-    DRAFT = 52
+    DRAFT = 52,
+    # Spread a religion to a city with a missionary unit (§8).
+    SPREAD_BELIEF = 53
 }
 
 # Win condition types

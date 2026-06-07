@@ -301,6 +301,8 @@ func apply_command(cmd: Dictionary) -> bool:
 			return _cmd_nuclear_strike(cmd)
 		IDs.CommandType.DRAFT:
 			return _cmd_draft(cmd)
+		IDs.CommandType.SPREAD_BELIEF:
+			return _cmd_spread_belief(cmd)
 		IDs.CommandType.DO_CONTROL:
 			return _cmd_do_control(cmd)
 		IDs.CommandType.PROPOSE_TRADE:
@@ -1291,6 +1293,51 @@ func _resolve_interception(bomber: Unit, tx: int, ty: int, player_id: int) -> bo
 	_apply_combat_result(interceptor, bomber, ir, false)
 	emit_signal("combat_resolved", ir)
 	return true
+
+# Spread a religion to a city with a missionary unit (§8). The missionary must be
+# the player's, carry the `spread_religion` tag, and sit on the target city's tile.
+# It spreads the player's religion (state religion, else a belief the player
+# founded or whose faith its cities hold) to a city that has none, respecting
+# Theocracy's non-state-spread block. The missionary is consumed on success.
+func _cmd_spread_belief(cmd: Dictionary) -> bool:
+	var p: Player = _gs.get_player(int(cmd["player_id"]))
+	if p == null:
+		return false
+	var u: Unit = _gs.get_unit(int(cmd.get("unit_id", -1)))
+	if u == null or u.owner_player_id != p.id:
+		return false
+	if not ("spread_religion" in _db.get_unit(u.unit_type_id).get("tags", [])):
+		return false
+	var s: Settlement = _gs.get_settlement(int(cmd.get("settlement_id", -1)))
+	if s == null or s.x != u.x or s.y != u.y:
+		return false
+	if s.belief_id != "":
+		return false  # single-belief model: only converts a faithless city
+	var belief_id: String = _belief_to_spread(p)
+	if belief_id == "":
+		return false
+	if Beliefs._spread_blocked(_gs, _db, s, belief_id):
+		return false
+	s.belief_id = belief_id
+	Stack.remove_unit(_gs.units, u.id)
+	if _selection != null:
+		_selection.selected_unit_ids.erase(u.id)
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	return true
+
+# The religion a player's missionary carries: the state religion if adopted, else
+# a belief the player founded, else one its cities already follow. "" if none.
+func _belief_to_spread(p: Player) -> String:
+	if p.state_religion != "":
+		return p.state_religion
+	for bid in _gs.founded_beliefs:
+		if int(_gs.founded_beliefs[bid]) == p.id:
+			return bid
+	for s in _gs.settlements:
+		if s.owner_player_id == p.id and s.belief_id != "":
+			return s.belief_id
+	return ""
 
 # Conscript a military unit from a city (§6.4). Requires the can_draft civic
 # (Nationhood); spends population and stirs unhappiness; the drafted unit is the
