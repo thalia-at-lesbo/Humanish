@@ -345,6 +345,10 @@ func _cmd_end_turn(player_id: int) -> bool:
 	# Advance to next active player
 	if not _gs.players.empty() and next_idx >= 0 and next_idx < _gs.players.size():
 		_gs.current_player_id = _gs.players[next_idx].id
+		# Resume any standing go-to orders before the turn opens, so multi-turn
+		# journeys advance automatically (their movement was refreshed when this
+		# player last ended a turn).
+		_resume_goto(_gs.current_player_id)
 		emit_signal("player_turn_started", _gs.current_player_id)
 
 	_dirty.mark_all()
@@ -448,9 +452,49 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 				u.movement_left = 0
 			break
 
+	# Persist (or clear) a go-to goal so a move that could not finish this turn keeps
+	# travelling toward its target on later turns (§3.3 go-to mission). The goal is
+	# dropped on arrival, and dropped after combat so a go-to never auto-re-attacks.
+	for u in moving_units:
+		if u.x == tx and u.y == ty:
+			u.goto_x = -1; u.goto_y = -1
+		elif lead.has_attacked:
+			u.goto_x = -1; u.goto_y = -1
+		else:
+			u.goto_x = tx; u.goto_y = ty
+
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
 	return true
+
+# Resume every go-to order for `player_id`: each unit still carrying a destination
+# travels toward it with this turn's movement. Called at the start of the player's
+# turn (movement already refreshed), so a multi-turn journey advances one turn's
+# worth automatically. An order that can no longer be pathed is abandoned.
+func _resume_goto(player_id: int) -> void:
+	# Snapshot ids first — a resumed move may remove a unit (combat) or others.
+	var ids: Array = []
+	for u in _gs.units:
+		if u.owner_player_id == player_id and u.goto_x >= 0:
+			ids.append(u.id)
+	for uid in ids:
+		var u: Unit = _gs.get_unit(uid)
+		if u == null or u.goto_x < 0:
+			continue
+		if u.x == u.goto_x and u.y == u.goto_y:
+			u.goto_x = -1; u.goto_y = -1
+			continue
+		if u.movement_left <= 0:
+			continue
+		var mc: Dictionary = {
+			"type": IDs.CommandType.MOVE_STACK,
+			"player_id": player_id,
+			"from_x": u.x, "from_y": u.y,
+			"to_x": u.goto_x, "to_y": u.goto_y,
+			"unit_ids": [u.id]
+		}
+		if not _cmd_move_stack(mc):
+			u.goto_x = -1; u.goto_y = -1   # unreachable now: give up the order
 
 # The units that actually move for a MOVE_STACK at (fx, fy): owned, on the tile,
 # and not riding a transport. When unit_ids is non-empty the result is filtered

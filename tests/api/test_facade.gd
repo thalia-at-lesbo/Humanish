@@ -183,6 +183,63 @@ func test_move_stack_moves_only_listed_units() -> void:
 	assert_eq([gs.get_unit(b.id).x, gs.get_unit(b.id).y], [4, 4],
 		"The unlisted stack member stays behind")
 
+# ── Multi-turn go-to (§3.3) ─────────────────────────────────────────────────────
+
+func test_move_to_far_tile_sets_goto_and_continues() -> void:
+	var facade = setup_facade(321, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = make_unit(gs, "warrior", pid, 5, 5)
+
+	# Destination six tiles east — well beyond one turn of movement.
+	assert_true(facade.apply_command(Commands.move_stack(pid, 5, 5, 11, 5)),
+		"Issuing a far move should succeed")
+	assert_true(gs.get_unit(u.id).x < 11, "It does not reach the far tile in one turn")
+	assert_eq(gs.get_unit(u.id).goto_x, 11, "It remembers the destination (x)")
+	assert_eq(gs.get_unit(u.id).goto_y, 5, "It remembers the destination (y)")
+
+	# Simulate the start of later turns: refresh movement and resume the order.
+	for _i in range(6):
+		if gs.get_unit(u.id).x == 11:
+			break
+		gs.get_unit(u.id).movement_left = gs.get_unit(u.id).movement_total
+		facade._resume_goto(pid)
+	assert_eq([gs.get_unit(u.id).x, gs.get_unit(u.id).y], [11, 5],
+		"The unit travels to the destination over several turns")
+	assert_eq(gs.get_unit(u.id).goto_x, -1, "The go-to goal clears on arrival")
+
+func test_adjacent_move_clears_goto() -> void:
+	var facade = setup_facade(322, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = make_unit(gs, "warrior", pid, 3, 3)
+	facade.apply_command(Commands.move_stack(pid, 3, 3, 4, 3))
+	assert_eq(gs.get_unit(u.id).goto_x, -1,
+		"A move that reaches its target leaves no standing go-to order")
+
+func test_goto_survives_save_load() -> void:
+	var facade = setup_facade(323, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	for tile in gs.map.all_tiles():
+		tile.terrain_id = "grassland"
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = make_unit(gs, "warrior", pid, 5, 5)
+	facade.apply_command(Commands.move_stack(pid, 5, 5, 11, 5))
+	var saved: String = facade.save()
+	assert_true(facade.load_save(saved), "reload the saved game")
+	var ru = facade.get_state().get_unit(u.id)
+	assert_eq(ru.goto_x, 11, "the standing go-to destination survives save/load")
+
 func test_can_stack_move_true_for_open_tile_false_for_water() -> void:
 	var facade = setup_facade(136, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])

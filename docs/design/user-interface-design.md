@@ -145,6 +145,15 @@ trigger celebration age, build improvement, attach as leader, run espionage miss
 internal animation/combat-sequencing pseudo-missions (begin/end combat, surrender,
 captured, idle, die, damage, multi-select/deselect).
 
+**Multi-turn go-to.** The move-to (and the stack-move it issues) is a *persistent*
+order: when the path to the target is longer than the unit's remaining movement, the
+destination is remembered on the unit and the journey resumes automatically at the start
+of each subsequent turn — the player issues the order once and the unit walks there over
+as many turns as it takes. The order is dropped on arrival, when it can no longer be
+pathed, or when the unit enters combat (so a go-to never auto-re-attacks). The host should
+surface the standing destination in the unit's selection readout (see §7 / the unit info
+pane) so the player can see a unit is en route, and re-issuing any order replaces it.
+
 ---
 
 ## 4. Interactive element catalog ("widgets")
