@@ -279,3 +279,37 @@ func test_playthrough_debug_console_unlocks_lategame_condition() -> void:
 	var before = gs.units.size()
 	_end_turn(f, gs, pid)
 	assert_true(gs.units.size() > before, "the gold-rushed unit was produced")
+
+# ── Victory: a win condition fires through the real pipeline ──────────────────────
+# The other playthrough slices stop short of ending the game; this one drives a
+# board to a cultural victory and ends a full round so the world step's §10 win
+# check (turn_engine `WORLD_CHECK_WIN`) actually fires and the facade raises
+# `game_won`. Cultural is the natural fit for an end-to-end check: a city's
+# `culture_ring` is recomputed each turn from its accumulated `culture_total`, so
+# pre-seeded legendary cities survive the pipeline (unlike raw tile ownership,
+# which the influence pass rewrites).
+func test_playthrough_reaches_a_cultural_victory() -> void:
+	var ng = _new_game(21); var gs = ng[0]; var f = ng[1]
+	gs.enabled_win_conditions = ["cultural", "time"]
+
+	var thresholds = gs.db.constants.get("culture_ring_thresholds", [])
+	var legendary = int(thresholds[thresholds.size() - 1]) + 1   # past the top ring
+	var need = int(gs.db.win_conditions["cultural"].get("cities_at_max_culture", 3))
+
+	# Player 1 owns the required number of legendary cities; player 2 has one
+	# fledgling town that never threatens to flip them.
+	for i in range(need):
+		var s = make_settlement(gs, 1, 3 + i * 3, 5, 6)
+		s.culture_total = legendary
+	make_settlement(gs, 2, 14, 14, 2)
+
+	watch_signals(f)
+	assert_eq(gs.winning_alliance_id, -1, "the game is still running before the round")
+
+	# End a whole round so the last end-turn triggers world_step → win check.
+	_end_turn(f, gs, 1)
+	_end_turn(f, gs, 2)
+
+	assert_eq(gs.winning_alliance_id, gs.get_player(1).alliance_id,
+		"the cultural alliance wins through the real turn pipeline")
+	assert_signal_emitted(f, "game_won", "the facade raised game_won on victory")
