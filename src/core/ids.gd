@@ -180,5 +180,8 @@ enum Phase {
     SETTLEMENT_BELIEFS = 22,
     SETTLEMENT_DECAY = 23,
     SETTLEMENT_SPECIALISTS = 24,
-    SETTLEMENT_MAINTENANCE = 25
+    SETTLEMENT_MAINTENANCE = 25,
+    # Cultural revolt / city flipping (§4.9), evaluated after the owner's
+    # settlements run their per-turn step.
+    PLAYER_CULTURE_REVOLT = 26
 }

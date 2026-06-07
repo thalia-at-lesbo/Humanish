@@ -86,6 +86,10 @@ var defence_value: int = 0
 var health: int = -1            # -1 = "full"; normalised to max on first use
 var peak_population: int = 1
 var revolt_turns: int = 0
+# Cultural-revolt progress (§4.9): successful revolt checks accumulated against
+# this settlement; it flips once they reach revolt_required_successes, and resets
+# to 0 whenever no rival out-cultures the owner on its tile (pressure relieved).
+var revolt_progress: int = 0
 
 func has_structure(struct_id: String) -> bool:
 	return struct_id in structures
@@ -121,7 +125,7 @@ func serialize() -> Dictionary:
 		"garrison_turns": garrison_turns,
 		"defence_value": defence_value,
 		"health": health, "peak_population": peak_population,
-		"revolt_turns": revolt_turns
+		"revolt_turns": revolt_turns, "revolt_progress": revolt_progress
 	}
 
 static func deserialize(d: Dictionary):
@@ -161,4 +165,5 @@ static func deserialize(d: Dictionary):
 	s.health = int(d.get("health", -1))
 	s.peak_population = int(d.get("peak_population", s.population))
 	s.revolt_turns = int(d.get("revolt_turns", 0))
+	s.revolt_progress = int(d.get("revolt_progress", 0))
 	return s

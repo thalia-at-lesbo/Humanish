@@ -44,6 +44,11 @@ var endgame_project_stages: Dictionary = {}  # alliance_id -> int
 # diplomatic win condition (§10). Empty until assemblies are implemented.
 var diplomatic_votes: Dictionary = {}  # alliance_id -> int votes
 
+# Transient cultural-flip records produced by the §4.9 revolt phase during a
+# player step, drained by SimFacade into notifications + the city_flipped signal.
+# Not serialized: it never survives past the end of the turn that produced it.
+var pending_flips: Array = []  # [{settlement_id, from_player_id, to_player_id}]
+
 # Auto-incrementing IDs
 var _next_unit_id: int = 1
 var _next_settlement_id: int = 1

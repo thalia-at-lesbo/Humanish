@@ -22,6 +22,7 @@ signal unit_created(unit_id)
 signal settlement_founded(settlement_id)
 signal city_conquered(settlement_id, captor_player_id)   # kept (in revolt) — §4.8
 signal city_razed(settlement_id, by_player_id)           # destroyed — §4.8
+signal city_flipped(settlement_id, from_player_id, to_player_id)  # cultural — §4.9
 signal technology_completed(player_id, tech_id)
 signal combat_resolved(result_dict)
 signal player_turn_started(player_id)
@@ -332,6 +333,7 @@ func _cmd_end_turn(player_id: int) -> bool:
 		return false
 
 	TurnEngine.player_step(_gs, player_id, _hooks)
+	_drain_flips()
 
 	# Trigger world step when the last player ends their turn (next wraps to index 0)
 	var next_idx: int = _get_next_player_index(player_id)
@@ -1796,3 +1798,19 @@ func _add_notification(text: String, category: String = "info") -> void:
 	if _notifications.size() > 100:
 		_notifications.pop_front()
 	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+
+# Surface any cultural-flip records the §4.9 revolt phase produced this player
+# step: one notification + a city_flipped signal each, then clear the queue.
+func _drain_flips() -> void:
+	if _gs.pending_flips.empty():
+		return
+	for f in _gs.pending_flips:
+		var city: Settlement = _gs.get_settlement(int(f["settlement_id"]))
+		var nm: String = city.name if city != null else "A city"
+		_add_notification(nm + " has defected through cultural pressure!", "major")
+		emit_signal("city_flipped", f["settlement_id"],
+			f["from_player_id"], f["to_player_id"])
+	_gs.pending_flips = []
+	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)

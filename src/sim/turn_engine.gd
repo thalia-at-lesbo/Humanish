@@ -106,6 +106,13 @@ static func player_step(gs: GameState, player_id: int, hooks: Hooks) -> void:
 			if s.owner_player_id == player_id:
 				settlement_step(gs, s, player, hooks)
 
+	# 6b. Cultural revolt / city flipping (§4.9). Tested after the owner's cities
+	# have spread their culture this turn; flips are queued for the facade to
+	# surface (notification + city_flipped signal).
+	if not hooks.run(IDs.Phase.PLAYER_CULTURE_REVOLT, gs, {"player_id": player_id}):
+		for f in CultureRevolt.process_player(gs, player_id, gs.rng, gs.db):
+			gs.pending_flips.append(f)
+
 	# 7. Tick down timed states
 	if not hooks.run(IDs.Phase.PLAYER_TICK_STATES, gs, {"player_id": player_id}):
 		_tick_states(gs, player)

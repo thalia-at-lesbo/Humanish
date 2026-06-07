@@ -238,6 +238,55 @@ regenerates a fixed amount each owner turn, up to that maximum.
 * **Disband.** At any other time a player may voluntarily **disband** one of their own
   settlements, which destroys it exactly as razing does.
 
+### 4.9 Cultural revolt and city flipping (provisional)
+> **⚠️ Provisional — preliminary, not verified.** This subsection is a first-pass model of
+> capturing a settlement through **cultural pressure** rather than combat. It is based only on
+> a preliminary reading of the reference game's behaviour and has **not** been checked against
+> the actual mechanics, nor is it implemented yet. The named factors, the 10% check rate, the
+> revolt-power and garrison-strength formulas, and all constants below are placeholders to be
+> verified and tuned before relying on them. (All quantities are integer math per the engine
+> invariants; the "ratios" below are expressed as integer percentages, e.g. a culture ratio of
+> 100–200.)
+
+Independently of military conquest (§4.8), a settlement may **flip** to a rival player when
+that rival's accumulated cultural influence (§4.7) on the settlement's tile exceeds the
+owner's. This makes culture a **strategic resource** that converts settlements over time, not
+merely a victory condition (§10), and makes a garrison matter **defensively** against cultural
+pressure as well as against assault.
+
+* **Eligibility.** A settlement is a flip candidate when a rival player both (a) controls a
+  settlement within cultural radius of it and (b) holds **more** accumulated influence than the
+  owner on the candidate's own tile.
+* **Revolt check.** Each owner turn, an eligible settlement has a fixed **revolt-check chance**
+  (placeholder: 10%, a tunable constant) of rolling a revolt, drawn from the shared generator
+  (§ground rules). A revolt then **succeeds or fails** by comparing the challenging rival's
+  **revolt power** against the settlement's **garrison strength**.
+* **Revolt power** (of the strongest eligible rival) is the product of:
+  * **Base** = `1 + 2 × highest historical population + (adjacent rival-controlled tiles × era number)`
+    (so a larger settlement, more surrounding rival territory, and a later era all raise the
+    pressure);
+  * **Culture ratio** = `1 + (rival_culture − owner_culture) / rival_culture`, clamped to the
+    range 1.0–2.0 (as integer percent, 100–200) — the more the rival out-cultures the owner on
+    that tile, the stronger the revolt;
+  * **Belief modifier** = ×2 if the rival has the relevant state belief (§8), ÷2 if the owner
+    does — belief acts as a cultural amplifier/dampener;
+  * **War modifier** = the garrison's contribution doubles while the owner is at war (war status
+    sharply raises rebellion risk; see the garrison term below).
+* **Garrison strength** = `1 + Σ(garrison value of each military unit stationed in the
+  settlement)`, where each unit's garrison value scales with its type (placeholder: early units
+  ≈ 3, late-era units ≈ 16). While the owner is at war this term is doubled (per the war
+  modifier above).
+* **Outcome.** If revolt power exceeds garrison strength the settlement **changes hands** to the
+  challenging rival. A **non-barbarian** settlement may require **multiple** successful revolts
+  before it actually flips (a revolt counter that must accumulate), whereas barbarian/wild
+  settlements flip on the first. A game setting governs whether a recently **conquered**
+  settlement (still in revolt, §4.8) is eligible to flip immediately or is shielded until its
+  occupation ends.
+
+When a settlement flips, ownership transfers exactly as a kept capture (§4.8) — the same
+queue/specialist clearing, siege-health restore, and Palace handling apply — but no combat or
+attacking stack is involved.
+
 ---
 
 ## 5. Units
