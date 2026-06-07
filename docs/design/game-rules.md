@@ -545,6 +545,80 @@ target), `sabotage` (halves a target city's stored production), and `incite_unre
 the target alliance's most populous city into disorder for its owner's next turn). Other
 missions named in the design narrative are not yet modelled.
 
+### 7.2 World assemblies, elections & resolutions (provisional)
+
+> **⚠️ Provisional — newly implemented, not verified.** This subsection documents the
+> **world government** mechanics — the religious assembly (Apostolic Palace) and the secular
+> assembly (United Nations) that elect a presiding leader and pass binding resolutions — as
+> now wired into the engine (`src/sim/assembly.gd`, the `Assembly` module). The offices, the
+> resolution catalogue and its **flavour text**, the vote-weight rules, the session cadence,
+> the AI voting heuristic, and every constant are placeholders drawn from a preliminary reading
+> of the reference game and have **not** been balance-tested. The effect set is partly wired and
+> partly recorded-only (called out below). All quantities are integer math per the engine
+> invariants (vote shares are integer percents 0–100), and every random draw goes through the
+> shared `gs.rng`, so sessions are reproducible and captured by save/load.
+
+A **diplomatic assembly** is a periodic voting body that lets the players collectively elect
+a presiding **resident** and enact binding **resolutions**. The game models two, each **founded
+by a world wonder**:
+
+* the **religious assembly** (founded by the **Apostolic Palace**, `effects.religious_assembly`),
+  a Medieval-era body organised around a single belief (§8); and
+* the **secular assembly** (founded by the **United Nations**, `effects.un_elections`),
+  a Modern-era body organised around all players, which **supersedes** the religious one.
+
+The legacy **population poll** still runs: each whole-world step (§3 world-step 7)
+`_resolve_assembly` tallies a population-weighted vote count per alliance into
+`gs.diplomatic_votes`, and the §10 **Diplomatic** win still awards victory to any alliance
+holding at least `vote_share_required` (placeholder 67%) of that total. The new assembly
+lifecycle runs **immediately after**, via `Assembly.world_tick`, and is the interactive layer
+on top of that standing.
+
+* **Founding & gating.** `Assembly.active_body` returns the secular body if any city holds the
+  United Nations, else the religious body if any city holds the Apostolic Palace, else **none**
+  — so with no founding wonder there is no assembly (and razing the wonder dissolves it). The
+  religious body organises around the **belief of the city holding the Apostolic Palace**.
+* **Membership & vote weight.** A **religious** member weights by the population of its cities
+  **holding the assembly's belief** (a player with no such city is not a member); a **secular**
+  member weights by **total governed population** (the United Nations guarantees eligibility, so
+  every non-eliminated player is a member). *(Provisional: the secular body does not yet filter
+  on met-contact, §7.)*
+* **Sessions.** The body convenes on a fixed cadence (`assembly_session_interval` turns). A
+  session records **one proposal** — a **leadership election** while the chair is vacant,
+  otherwise a random eligible **resolution** drawn from `data/resolutions.json` (§18) with the
+  shared RNG. The proposal opens one world step and **resolves on the next**, giving every member
+  exactly one player-turn to vote in between (one assembly action per world tick).
+* **Voting.** Each member casts **Yea / Nay / Abstain** through the `CAST_VOTE` command
+  (`SimFacade.cast_assembly_vote` / `Commands.cast_vote`). On a human member's turn the facade
+  raises a **choose-election** popup (`IDs.PopupType.CHOOSE_ELECTION`); computer players vote in
+  `PlayerAI.manage_assembly` via the deterministic self-interest heuristic `Assembly.ai_vote`
+  (back your own bloc's candidate, never hand a rival the game, sue for peace when at war, resist
+  embargoes aimed at you, …). At resolution, non-voters **abstain**; votes are tallied by weight
+  and the proposal **passes** when the Yea share of the whole chamber's weight reaches
+  `resolution_pass_share` (or a per-resolution `pass_share`). Abstentions count present but not
+  for, so they make passage harder.
+* **Leadership election.** Members elect a **resident** (the presiding player — a "Pope" for the
+  religious body, a "Secretary-General" for the secular one); the front-runner (highest-weight
+  member) stands as candidate. The resident sets the agenda (every later session proposes a
+  resolution) until the chair falls vacant again.
+* **Resolutions & effects.** A passed proposal applies its effect. **Fully wired:**
+  `elect_resident` (seat the resident); `diplomatic_victory` (when the Diplomatic win is enabled,
+  the candidate's alliance **wins**, §10); `force_peace` (global cease-fire — clears all war and
+  war-fatigue); `civic_mandate` (members adopt the resident's government civic where tech allows);
+  `religion_mandate` (members harbouring the assembly belief adopt it as **state religion**, §8.1,
+  bypassing the switch anarchy as a compelled change); `resident_aid` (grant the resident gold).
+  **Recorded as standing effects** (stored on the assembly, partial enforcement):
+  `trade_embargo` (the sanctioned alliance is blocked from proposing/receiving trades, §7);
+  `free_religion_spread` and `no_nuclear` (recorded; full enforcement pending the relevant
+  subsystems). The "defiance of assembly rulings" contentment penalty (§4.5) is **not yet** wired
+  to the contentment model.
+
+Persistence and determinism: the assembly record (`kind`, organising belief, `resident_player_id`,
+the open `pending` proposal and its cast `votes`, and standing effects) is serialized on
+`GameState.assembly`, so a session in progress survives save/load and stays on the determinism
+gate; `pending_assembly_events` is the transient queue the facade drains into notifications and
+the `assembly_event` signal.
+
 ---
 
 ## 8. Beliefs & economic organizations

@@ -38,6 +38,7 @@ static func take_turn(facade, player_id: int) -> void:
 	manage_research(facade, player_id)
 	manage_civics(facade, player_id)
 	manage_religion(facade, player_id)
+	manage_assembly(facade, player_id)
 	manage_production(facade, player_id)
 	manage_units(facade, player_id)
 
@@ -154,6 +155,20 @@ static func manage_religion(facade, player_id: int) -> void:
 	var ids = present.keys()
 	ids.sort()
 	facade.apply_command(Commands.set_state_religion(player_id, ids[0]))
+
+# ── Assembly: cast a self-interested vote on any open proposal (§7.2) ───────────
+
+# When a diplomatic-assembly session is open and this computer player is an eligible
+# member that has not yet voted, cast the deterministic self-interest vote chosen by
+# Assembly.ai_vote (no RNG). Goes through the command path like any other action.
+static func manage_assembly(facade, player_id: int) -> void:
+	var gs = facade.get_state()
+	if not Assembly.has_open_session(gs) or Assembly.has_voted(gs, player_id):
+		return
+	var p = gs.get_player(player_id)
+	if p == null or not Assembly.is_member(gs, p, str(gs.assembly.get("kind", ""))):
+		return
+	facade.apply_command(Commands.cast_vote(player_id, Assembly.ai_vote(gs, player_id)))
 
 # ── Cities: rotate through every buildable item, cheapest first ────────────────
 

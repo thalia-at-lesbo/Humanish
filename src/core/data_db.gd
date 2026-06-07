@@ -36,6 +36,8 @@ var leaders_traits: Dictionary = {}
 var projects: Dictionary = {}
 var win_conditions: Dictionary = {}
 var events: Dictionary = {}
+# Diplomatic-assembly elections & resolutions (§18, provisional).
+var resolutions: Dictionary = {}
 
 var _errors: Array = []
 
@@ -63,6 +65,7 @@ func load_all() -> bool:
 	projects     = _load_json("res://data/projects.json")
 	win_conditions = _load_json("res://data/win_conditions.json")
 	events       = _load_json("res://data/events.json")
+	resolutions  = _load_json("res://data/resolutions.json")
 	_validate()
 	return _errors.empty()
 
@@ -89,6 +92,10 @@ func get_unit(id: String) -> Dictionary:
 
 func get_structure(id: String) -> Dictionary:
 	return structures.get(id, {})
+
+func get_resolution(id: String) -> Dictionary:
+	# Skip the leading "_comment" documentation key (not a resolution).
+	return resolutions.get(id, {})
 
 func get_technology(id: String) -> Dictionary:
 	return technologies.get(id, {})
