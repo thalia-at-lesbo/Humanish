@@ -281,6 +281,11 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 		total_prod += Fixed.scale(total_prod,
 			PolicyEffects.sum_int(player, db, "capital_production"))
 
+	# Trade routes (§8): each city runs a number of routes (granted by civics such
+	# as Free Market) to other cities, each adding commerce. Added before blockade so
+	# an enemy fleet chokes route income too.
+	total_commerce += _trade_route_commerce(gs, s, player)
+
 	# Naval blockade (§5.6): an enemy fleet sitting off a coastal city throttles its
 	# trade, cutting its commerce while the blockade holds.
 	var blockade: int = _blockade_penalty(gs, s, player)
@@ -654,6 +659,61 @@ static func _grant_free_promotions(gs: GameState, u: Unit, s: Settlement) -> voi
 # (cottage → hamlet → village → town). Only worked tiles grow, mirroring the
 # reference model. Pure age bookkeeping on the tile; output is gated by tech in
 # TileOutput as usual.
+# Trade-route commerce for a city (§8). A city runs `trade_routes_base` plus the
+# civic `trade_route_per_city` (Free Market) routes, each to a distinct other city;
+# Mercantilism's `no_foreign_trade_routes` restricts them to the player's own
+# cities, and routes never run to a city the player is at war with. Each route's
+# yield is a base plus a share of the two cities' combined size, with a bonus for
+# foreign partners. Partners are chosen highest-yield first, deterministically.
+static func _trade_route_commerce(gs: GameState, s: Settlement, player: Player) -> int:
+	var db: DataDB = gs.db
+	var routes: int = db.get_constant("trade_routes_base", 0) \
+		+ PolicyEffects.sum_int(player, db, "trade_route_per_city")
+	if routes <= 0:
+		return 0
+	var no_foreign: bool = PolicyEffects.has_flag(player, db, "no_foreign_trade_routes")
+	var cands: Array = []  # [{yield, id}]
+	for o in gs.settlements:
+		if o.id == s.id:
+			continue
+		if o.owner_player_id != player.id:
+			if no_foreign:
+				continue
+			if gs.are_at_war(player.id, o.owner_player_id):
+				continue
+		var dist: int = gs.map.distance(s.x, s.y, o.x, o.y)
+		cands.append({"y": _route_yield(db, s, o, dist, player), "id": o.id})
+	# Selection-pick the highest-yield routes (ties broken by lower settlement id).
+	var total: int = 0
+	var taken: int = 0
+	var n: int = cands.size()
+	var used: Dictionary = {}
+	while taken < routes and taken < n:
+		var best: int = -1
+		for i in range(n):
+			if used.has(i):
+				continue
+			if best == -1:
+				best = i
+			elif cands[i]["y"] > cands[best]["y"] \
+					or (cands[i]["y"] == cands[best]["y"] and cands[i]["id"] < cands[best]["id"]):
+				best = i
+		if best == -1:
+			break
+		used[best] = true
+		total += int(cands[best]["y"])
+		taken += 1
+	return total
+
+# Commerce a single trade route yields between cities `s` and `o` at `dist` tiles.
+static func _route_yield(db: DataDB, s: Settlement, o: Settlement,
+		dist: int, player: Player) -> int:
+	var y: int = db.get_constant("trade_route_base_yield", 1)
+	y += ((s.population + o.population) * db.get_constant("trade_route_pop_pct", 25)) / 100
+	if o.owner_player_id != player.id:
+		y += db.get_constant("trade_route_foreign_bonus", 2)
+	return y if y >= 0 else 0
+
 # Naval-blockade commerce penalty (§5.6): a coastal city with a hostile naval unit
 # (wild, or an enemy at war) sitting within `blockade_range` has its trade choked,
 # returning `blockade_commerce_penalty` percent. 0 for inland cities or when no

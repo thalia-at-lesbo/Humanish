@@ -108,9 +108,12 @@ Covered by `tests/sim/test_policy_effects.gd`.
 - Emancipation's cross-faction unhappiness is not modelled (the cottage→hamlet→
   village→town upgrading it speeds *is* now modelled — see below;
   `faster_cottage_growth` is wired in `TurnEngine._grow_cottages`).
-- `trade_route_per_city`, `no_foreign_trade_routes` (Free Market / Mercantilism)
-  and `corporation_maintenance_reduction` — trade routes are unbuilt (§3), and
-  econ orgs charge a per-spread cost rather than ongoing maintenance.
+- `trade_route_per_city` (Free Market) and `no_foreign_trade_routes`
+  (Mercantilism) are now wired: cities run trade routes (`TurnEngine._trade_route_commerce`,
+  base count `trade_routes_base` default 0, so routes appear only under a granting
+  civic), restricted to domestic partners by Mercantilism and never run to a city
+  at war. `corporation_maintenance_reduction` stays inert — econ orgs charge a
+  per-spread cost rather than ongoing maintenance, so there is nothing to reduce.
 - (`can_draft` and `missionary_without_monastery` are now wired — see the draft
   and missionary subsystems below.)
 
