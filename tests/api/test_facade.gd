@@ -276,6 +276,41 @@ func test_tile_info_text_reports_terrain() -> void:
 	assert_true(text.find("Grassland") >= 0, "Tile info names the terrain")
 	assert_true(text.find("Yields") >= 0, "Tile info lists yields")
 
+func test_tile_info_text_shows_foreign_unit() -> void:
+	var facade = setup_facade(1500, "small",
+		[{"name": "Rome", "leader_id": "", "traits": [], "starting_gold": 50},
+		 {"name": "Greece", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	gs.current_player_id = gs.players[0].id
+	var enemy = make_unit(gs, "warrior", gs.players[1].id, 5, 5)
+	var text = facade.tile_info_text(5, 5)
+	assert_true(text.find("Greece") >= 0, "Foreign unit's owner name appears in tile info")
+	assert_true(text.find("HP") >= 0, "Foreign unit's health appears in tile info")
+
+func test_tile_info_text_shows_foreign_city() -> void:
+	var facade = setup_facade(1501, "small",
+		[{"name": "Rome", "leader_id": "", "traits": [], "starting_gold": 50},
+		 {"name": "Greece", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	gs.current_player_id = gs.players[0].id
+	var city = make_settlement(gs, gs.players[1].id, 6, 6)
+	city.name = "Athens"
+	var text = facade.tile_info_text(6, 6)
+	assert_true(text.find("Greece") >= 0, "Foreign city's owner name appears in tile info")
+	assert_true(text.find("Athens") >= 0, "Foreign city's name appears in tile info")
+	assert_true(text.find("pop") >= 0, "Foreign city's population appears in tile info")
+
+func test_tile_info_text_omits_own_subjects() -> void:
+	var facade = setup_facade(1502, "small",
+		[{"name": "Rome", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	make_unit(gs, "warrior", pid, 4, 4)
+	make_settlement(gs, pid, 4, 4)
+	var text = facade.tile_info_text(4, 4)
+	assert_eq(text.find("Rome's"), -1, "Own units/cities are not duplicated in tile info")
+
 func test_mission_move_to_is_per_unit() -> void:
 	# MISSION_MOVE_TO is a per-unit move command: only the named unit leaves a
 	# shared tile, so it can be peeled off a stack.

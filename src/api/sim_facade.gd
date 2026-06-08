@@ -1856,6 +1856,20 @@ func tile_info_text(tx: int, ty: int) -> String:
 		+ str(int(out.get("commerce", 0))) + "C")
 	lines.append("Move cost: " + str(int(ter.get("movement_cost", 100)) / 100) \
 		+ "   Defence: +" + str(int(ter.get("defence_bonus", 0))) + "%")
+
+	# Foreign cities and units on this tile (read-only; player may not own them).
+	for s in _gs.settlements:
+		if s.x == tx and s.y == ty and s.owner_player_id != _gs.current_player_id:
+			var owner: Player = _gs.get_player(s.owner_player_id)
+			var owner_name: String = owner.name if owner != null else "?"
+			lines.append(owner_name + "'s city: " + s.name + "  (pop " + str(s.population) + ")")
+	for u in _gs.units:
+		if u.x == tx and u.y == ty and u.owner_player_id != _gs.current_player_id:
+			var owner: Player = _gs.get_player(u.owner_player_id)
+			var owner_name: String = owner.name if owner != null else "?"
+			var uname: String = _db.get_unit(u.unit_type_id).get("name", u.unit_type_id.capitalize())
+			lines.append(owner_name + "'s " + uname + "  (HP " + str(u.health) + ")")
+
 	return PoolStringArray(lines).join("\n")
 
 func cycle_idle_units(workers_only: bool = false) -> void:
