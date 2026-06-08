@@ -108,3 +108,30 @@ func test_incite_unrest_puts_largest_city_in_disorder() -> void:
 	f._espionage_incite_unrest(gs.alliances[1])
 	assert_true(big.in_disorder, "The most populous enemy city falls into disorder")
 	assert_eq(big.discontented, big.population, "Its whole population is discontented")
+
+# ── Public query helpers for the espionage menu (§15.5 provisional) ─────────────
+
+func test_get_espionage_mission_cost_matches_private() -> void:
+	var gs = make_gs(2)
+	var f = bare_facade(gs)
+	var base: int = gs.db.get_constant("intel_mission_cost", 100)
+	gs.get_player(1).intel_points = {2: base * 5}
+	gs.current_player_id = 1
+	assert_eq(f.get_espionage_mission_cost(2),
+		f._espionage_mission_cost(gs.get_player(1), gs.alliances[1], base * 5),
+		"Public cost query matches private helper for the same attacker/target")
+
+func test_get_espionage_interception_chance_matches_private() -> void:
+	var gs = make_gs(2)
+	var f = bare_facade(gs)
+	gs.current_player_id = 1
+	assert_eq(f.get_espionage_interception_chance(2),
+		f._espionage_interception_chance(gs.alliances[1]),
+		"Public interception query matches private helper")
+
+func test_get_espionage_mission_cost_returns_zero_for_invalid_target() -> void:
+	var gs = make_gs(2)
+	var f = bare_facade(gs)
+	gs.current_player_id = 1
+	assert_eq(f.get_espionage_mission_cost(999), 0,
+		"Cost query returns 0 for a non-existent alliance")

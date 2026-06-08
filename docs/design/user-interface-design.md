@@ -360,6 +360,18 @@ game details; admin details and admin-password; extended-game prompt; diplomacy;
 forced-disconnect / host-disconnect / kicked notices; subjugation tribute demand/grant;
 event; free-colony; launch-victory; found-belief.
 
+> ⚠️ **Provisional — Espionage mission menu** (`scenes/screens/espionage_menu.gd`):
+> A modal overlay opened from the Espionage advisor screen when the player clicks
+> "Select Mission vs. \<target\>…". Displays target alliance name, the player's
+> current EP against that target, the mission cost (computed by
+> `SimFacade.get_espionage_mission_cost()`), and the interception chance
+> (`SimFacade.get_espionage_interception_chance()`). Offers three mission buttons —
+> **Steal Tech**, **Sabotage**, **Incite Unrest** — each labelled with its EP cost
+> and disabled when the player cannot afford it. An **Abort** button closes the
+> popup without acting. Selecting a mission fires `Commands.espionage_mission` and
+> invokes a rebuild callback on the parent screen. The popup is an alliance-scope
+> action; spy-unit-on-tile mission verbs remain unbuilt (see §3 deferred items).
+
 ---
 
 ## 7. Selection and the active subject
@@ -510,8 +522,11 @@ data it shows and what actions it offers, not its layout:
     (population, production, happiness, tile yields). (`domestic_advisor_screen.gd`)
   - *Finance advisor* (`OPEN_FINANCE`): empire income/expense breakdown.
   - *Military advisor* (`OPEN_MILITARY`): list of all military units and their status.
-  - *Espionage advisor* (`OPEN_ESPIONAGE`): accumulated EP per target alliance, available
-    missions and their costs.
+  - *Espionage advisor* (`OPEN_ESPIONAGE`): accumulated EP per target alliance; a
+    "Select Mission vs. \<target\>…" button (shown when EP ≥ mission cost) opens the
+    ⚠️ provisional **Espionage mission menu** popup (§6.3) — displaying cost,
+    interception risk, and the three mission options. (`espionage_screen.gd`,
+    `espionage_menu.gd`)
   - *Victory progress* (`OPEN_VICTORY_PROGRESS`): per-condition progress bars for all
     enabled win conditions. (`victory_progress_screen.gd`)
   - *Turn log* (`OPEN_TURN_LOG`): scrollable history of all game events for the current
