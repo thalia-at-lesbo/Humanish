@@ -57,6 +57,96 @@ func test_close_screen_hides_info_screen() -> void:
 		screen.close_screen()
 		assert_false(screen.visible, "Screen %s hidden after close_screen()" % path)
 
+func _find_button(node, text):
+	for c in node.get_children():
+		if c is Button and c.text == text:
+			return c
+		var found = _find_button(c, text)
+		if found != null:
+			return found
+	return null
+
+func _find_by_text(node, needle: String):
+	for c in node.get_children():
+		if (c is Label or c is Button) and needle in c.text:
+			return c
+		var found = _find_by_text(c, needle)
+		if found != null:
+			return found
+	return null
+
+func _make_espionage_facade(seed_val: int):
+	var facade = setup_facade(seed_val, "small",
+		[{"name": "Rome",   "leader_id": "", "traits": [], "starting_gold": 50},
+		 {"name": "Greece", "leader_id": "", "traits": [], "starting_gold": 50}],
+		["time"])
+	var gs = facade.get_state()
+	gs.current_player_id = gs.players[0].id
+	var cost: int = gs.db.get_constant("intel_mission_cost", 100)
+	gs.get_player(gs.players[0].id).intel_points = {gs.alliances[1].id: cost + 50}
+	return facade
+
+func test_espionage_screen_shows_select_mission_button_when_enough_ep() -> void:
+	var facade = _make_espionage_facade(200)
+	var screen = load("res://scenes/screens/espionage_screen.gd").new()
+	add_child_autofree(screen)
+	screen.init(facade)
+	screen.show_screen()
+	assert_not_null(_find_button(screen, null) if false else _find_by_text(screen, "Select Mission"),
+		"Espionage screen must show a 'Select Mission…' button when EP >= cost")
+
+func test_espionage_menu_shows_missions_and_abort() -> void:
+	var facade = _make_espionage_facade(201)
+	var gs = facade.get_state()
+	var target_id: int = gs.alliances[1].id
+	var menu = load("res://scenes/screens/espionage_menu.gd").new()
+	add_child_autofree(menu)
+	menu.init(facade, target_id, null)
+	assert_not_null(_find_button(menu, null) if false else _find_by_text(menu, "Steal Tech"),
+		"Espionage menu must list Steal Tech")
+	assert_not_null(_find_by_text(menu, "Sabotage"),   "Espionage menu must list Sabotage")
+	assert_not_null(_find_by_text(menu, "Incite Unrest"), "Espionage menu must list Incite Unrest")
+	assert_not_null(_find_button(menu, "Abort"),        "Espionage menu must have an Abort button")
+
+func test_espionage_menu_shows_cost_and_interception() -> void:
+	var facade = _make_espionage_facade(202)
+	var gs = facade.get_state()
+	var target_id: int = gs.alliances[1].id
+	var cost: int = facade.get_espionage_mission_cost(target_id)
+	var menu = load("res://scenes/screens/espionage_menu.gd").new()
+	add_child_autofree(menu)
+	menu.init(facade, target_id, null)
+	assert_not_null(_find_by_text(menu, "cost"),           "Menu displays EP cost")
+	assert_not_null(_find_by_text(menu, "Interception"),   "Menu displays interception chance")
+	assert_true(cost > 0, "get_espionage_mission_cost returns a positive cost")
+
+func test_espionage_menu_abort_closes_without_acting() -> void:
+	var facade = _make_espionage_facade(203)
+	var gs = facade.get_state()
+	var target_id: int = gs.alliances[1].id
+	var have_before: int = int(gs.get_player(gs.players[0].id).intel_points.get(target_id, 0))
+	var menu = load("res://scenes/screens/espionage_menu.gd").new()
+	add_child(menu)
+	menu.init(facade, target_id, null)
+	menu._on_abort()
+	yield(get_tree(), "idle_frame")
+	var have_after: int = int(gs.get_player(gs.players[0].id).intel_points.get(target_id, 0))
+	assert_eq(have_before, have_after, "Aborting the menu must not spend any EP")
+
+func test_espionage_menu_mission_spends_ep() -> void:
+	var facade = _make_espionage_facade(204)
+	var gs = facade.get_state()
+	gs.get_player(gs.players[1].id).technologies = ["mining"]
+	var target_id: int = gs.alliances[1].id
+	var have_before: int = int(gs.get_player(gs.players[0].id).intel_points.get(target_id, 0))
+	var menu = load("res://scenes/screens/espionage_menu.gd").new()
+	add_child(menu)
+	menu.init(facade, target_id, null)
+	menu._on_mission("steal_tech")
+	yield(get_tree(), "idle_frame")
+	var have_after: int = int(gs.get_player(gs.players[0].id).intel_points.get(target_id, 0))
+	assert_true(have_after < have_before, "Launching a mission spends EP")
+
 func test_options_screen_score_toggle_routes_through_facade() -> void:
 	var facade = setup_facade(92)
 	var gs = facade.get_state()

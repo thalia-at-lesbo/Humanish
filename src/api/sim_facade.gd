@@ -1181,6 +1181,30 @@ func _cmd_espionage_mission(cmd: Dictionary) -> bool:
 			_espionage_incite_unrest(target_alliance)
 	return true
 
+# Public query: EP cost for the current player to run any mission against
+# target_alliance_id. Returns 0 when state is unavailable or the target is
+# invalid, so callers can safely use the result to gate UI buttons.
+func get_espionage_mission_cost(target_alliance_id: int) -> int:
+	if _gs == null:
+		return 0
+	var p: Player = _gs.get_player(_gs.current_player_id)
+	if p == null:
+		return 0
+	var target: Alliance = _gs.get_alliance(target_alliance_id)
+	if target == null:
+		return 0
+	var have: int = int(p.intel_points.get(target_alliance_id, 0))
+	return _espionage_mission_cost(p, target, have)
+
+# Public query: interception percentage for missions against target_alliance_id.
+func get_espionage_interception_chance(target_alliance_id: int) -> int:
+	if _gs == null:
+		return 0
+	var target: Alliance = _gs.get_alliance(target_alliance_id)
+	if target == null:
+		return 0
+	return _espionage_interception_chance(target)
+
 # §15.5 mission cost (provisional): base × (1 + EP-advantage/100). The advantage
 # is how much more espionage the target holds against the attacker than the
 # attacker holds against the target — a well-defended rival costs more to hit.
