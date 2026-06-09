@@ -325,11 +325,21 @@ static func set_citizen_automation(player_id: int, settlement_id: int,
 	}
 
 static func disband_city(player_id: int, settlement_id: int) -> Dictionary:
-	# Voluntarily raze one of your own cities (§4.8).
+	# Voluntarily raze one of your own cities (§4.8). Blocked for the capital.
 	return {
 		"type": IDs.CommandType.DISBAND_CITY,
 		"player_id": player_id,
 		"settlement_id": settlement_id
+	}
+
+static func dequeue_production(player_id: int, settlement_id: int,
+		index: int) -> Dictionary:
+	# Remove the item at `index` from the city's production queue (§11 city screen).
+	return {
+		"type": IDs.CommandType.DEQUEUE_PRODUCTION,
+		"player_id": player_id,
+		"settlement_id": settlement_id,
+		"index": index
 	}
 
 static func espionage_mission(player_id: int, target_alliance_id: int,

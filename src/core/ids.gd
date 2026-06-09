@@ -99,7 +99,9 @@ enum CommandType {
     MISSION_SLEEP_UNTIL_HEALED = 54,
     MISSION_FORTIFY_UNTIL_HEALED = 55,
     # Explore mission (§3.3): recon/scout auto-moves toward unexplored territory.
-    MISSION_EXPLORE = 56
+    MISSION_EXPLORE = 56,
+    # Remove an item from a city's production queue by index (§11 city screen).
+    DEQUEUE_PRODUCTION = 57
 }
 
 # Win condition types

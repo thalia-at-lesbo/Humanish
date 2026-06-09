@@ -328,6 +328,8 @@ func apply_command(cmd: Dictionary) -> bool:
 			return _cmd_set_citizen_automation(cmd)
 		IDs.CommandType.DISBAND_CITY:
 			return _cmd_disband_city(cmd)
+		IDs.CommandType.DEQUEUE_PRODUCTION:
+			return _cmd_dequeue_production(cmd)
 		IDs.CommandType.ESPIONAGE_MISSION:
 			return _cmd_espionage_mission(cmd)
 		IDs.CommandType.LOAD_UNIT:
@@ -669,10 +671,13 @@ func _raze_city(city: Settlement, by_pid: int) -> void:
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
 
 # Voluntarily disband (raze) one of the player's own cities at any time (§4.8).
+# The capital (identified by holding the Palace structure) cannot be disbanded.
 func _cmd_disband_city(cmd: Dictionary) -> bool:
 	var s: Settlement = _gs.get_settlement(int(cmd.get("settlement_id", -1)))
 	var pid: int = int(cmd["player_id"])
 	if s == null or s.owner_player_id != pid:
+		return false
+	if s.has_structure("palace"):
 		return false
 	_raze_city(s, pid)
 	return true
@@ -766,6 +771,18 @@ func _cmd_set_production(cmd: Dictionary) -> bool:
 	if s == null or s.owner_player_id != int(cmd["player_id"]):
 		return false
 	s.production_queue = cmd.get("queue", []).duplicate(true)
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	return true
+
+# Remove one item from a city's production queue by zero-based index (§11).
+func _cmd_dequeue_production(cmd: Dictionary) -> bool:
+	var s: Settlement = _gs.get_settlement(int(cmd.get("settlement_id", -1)))
+	if s == null or s.owner_player_id != int(cmd["player_id"]):
+		return false
+	var idx: int = int(cmd.get("index", -1))
+	if idx < 0 or idx >= s.production_queue.size():
+		return false
+	s.production_queue.remove(idx)
 	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
 	return true
 

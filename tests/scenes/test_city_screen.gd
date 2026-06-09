@@ -112,3 +112,38 @@ func test_city_screen_assign_specialist() -> void:
 	assert_eq(int(s.specialists.get("scientist", 0)), 1, "Adding a specialist sets its count")
 	screen._on_specialist("scientist", 0)
 	assert_eq(int(s.specialists.get("scientist", 0)), 0, "Removing it clears the count")
+
+func test_city_screen_dequeue_removes_item() -> void:
+	var facade = setup_facade(76, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var s = make_settlement(gs, pid, 5, 5, 2)
+	s.production_queue = [
+		{"type": "unit", "id": "warrior"},
+		{"type": "structure", "id": "granary"}
+	]
+
+	var screen = _screen(facade)
+	screen._city_id = s.id
+	screen.visible = true
+	screen._on_dequeue(0)
+	assert_eq(s.production_queue.size(), 1, "Clicking index 0 removes the first queue item")
+	assert_eq(str(s.production_queue[0].get("id", "")), "granary",
+		"The second item shifts to the front")
+
+func test_city_screen_dequeue_last_item_empties_queue() -> void:
+	var facade = setup_facade(77, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var s = make_settlement(gs, pid, 5, 5, 2)
+	s.production_queue = [{"type": "unit", "id": "archer"}]
+
+	var screen = _screen(facade)
+	screen._city_id = s.id
+	screen.visible = true
+	screen._on_dequeue(0)
+	assert_true(s.production_queue.empty(), "Removing the only queue item leaves the queue empty")

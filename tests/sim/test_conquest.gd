@@ -117,6 +117,28 @@ func test_cannot_disband_someone_elses_city() -> void:
 		"A player cannot disband a city they do not own")
 	assert_eq(gs.get_settlement_at(5, 5).id, city.id, "…and the city survives")
 
+func test_cannot_disband_capital() -> void:
+	var gs = make_gs(1)
+	gs.current_player_id = 1
+	var capital = make_settlement(gs, 1, 5, 5, 3)
+	capital.structures.append("palace")
+	var f = bare_facade(gs)
+	assert_false(f.apply_command(Commands.disband_city(1, capital.id)),
+		"The capital (palace holder) cannot be disbanded")
+	assert_eq(gs.get_settlement_at(5, 5).id, capital.id, "…the capital survives")
+
+func test_can_disband_non_capital_when_capital_exists() -> void:
+	var gs = make_gs(1)
+	gs.current_player_id = 1
+	var capital = make_settlement(gs, 1, 5, 5, 3)
+	capital.structures.append("palace")
+	var colony = make_settlement(gs, 1, 8, 8, 2)
+	var f = bare_facade(gs)
+	assert_true(f.apply_command(Commands.disband_city(1, colony.id)),
+		"A non-capital city can be disbanded even when the capital exists")
+	assert_eq(gs.get_settlement_at(8, 8), null, "Colony is razed")
+	assert_eq(gs.get_settlement_at(5, 5).id, capital.id, "Capital is unaffected")
+
 # ── Revolt & HP regen through the turn pipeline ───────────────────────────────
 
 func test_revolt_city_produces_nothing_and_counts_down() -> void:

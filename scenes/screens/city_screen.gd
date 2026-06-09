@@ -108,10 +108,18 @@ func _build() -> void:
 		var item = s.production_queue[0]
 		var pace = db.get_pace(gs.pace_id)
 		var cost = TurnEngine._item_cost(item, db, owner, pace)
-		_line(v, "Building: " + str(item.get("id", "?")) + " (" + str(item.get("type", "")) \
-			+ ")   " + str(s.production_store) + "/" + str(cost))
+		var head_btn := Button.new()
+		head_btn.text = "Building: " + str(item.get("id", "?")) + " (" \
+			+ str(item.get("type", "")) + ")   " \
+			+ str(s.production_store) + "/" + str(cost) + "  [click to remove]"
+		head_btn.connect("pressed", self, "_on_dequeue", [0])
+		v.add_child(head_btn)
 		for i in range(1, s.production_queue.size()):
-			_line(v, "   next: " + str(s.production_queue[i].get("id", "?")))
+			var q_btn := Button.new()
+			q_btn.text = "   next: " + str(s.production_queue[i].get("id", "?")) \
+				+ "  [click to remove]"
+			q_btn.connect("pressed", self, "_on_dequeue", [i])
+			v.add_child(q_btn)
 
 	# ── City actions: hurry production / draft ─────────────────────────────────
 	_header(v, "City Actions")
@@ -294,6 +302,14 @@ func _on_build(itype: String, iid: String) -> void:
 	var q = s.production_queue.duplicate(true)
 	q.append({"type": itype, "id": iid})
 	_facade.apply_command(Commands.set_production(s.owner_player_id, _city_id, q))
+	rebuild()
+
+func _on_dequeue(index: int) -> void:
+	var gs = _facade.get_state()
+	var s = gs.get_settlement(_city_id)
+	if s == null:
+		return
+	_facade.apply_command(Commands.dequeue_production(s.owner_player_id, _city_id, index))
 	rebuild()
 
 func _on_rush(method: String) -> void:
