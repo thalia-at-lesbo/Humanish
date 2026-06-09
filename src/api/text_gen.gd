@@ -79,6 +79,8 @@ static func unit_state_text(u) -> String:
         return "Sleeping"
     if u.is_fortified:
         return "Fortified"
+    if u.is_exploring:
+        return "Exploring"
     if u.is_sentry:
         return "On sentry"
     if u.is_patrolling:

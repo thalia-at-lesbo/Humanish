@@ -365,6 +365,9 @@ func test_pop_rush_requires_slavery() -> void:
 func test_serfdom_speeds_worker_builds() -> void:
 	var gs = make_gs(1)
 	gs.current_player_id = 1
+	# Mine requires "mining" tech and hills landform — provide both.
+	gs.get_player(1).technologies = ["mining"]
+	gs.map.get_tile(5, 5).terrain_id = "hills"
 	var f = bare_facade(gs)
 	var w = make_unit(gs, "worker", 1, 5, 5)
 	f.apply_command(Commands.build_improvement(1, w.id, "mine"))  # build_turns 5

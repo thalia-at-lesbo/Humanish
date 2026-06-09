@@ -97,7 +97,9 @@ enum CommandType {
     # Heal-until-recovered stances (§3.3): unit skips turns until full health,
     # then wakes idle. FORTIFY_UNTIL_HEALED also grants the fortify defence bonus.
     MISSION_SLEEP_UNTIL_HEALED = 54,
-    MISSION_FORTIFY_UNTIL_HEALED = 55
+    MISSION_FORTIFY_UNTIL_HEALED = 55,
+    # Explore mission (§3.3): recon/scout auto-moves toward unexplored territory.
+    MISSION_EXPLORE = 56
 }
 
 # Win condition types
@@ -168,7 +170,8 @@ enum UnitMission {
     RANGED_ATTACK = 7, BOMBARD = 8, AIRLIFT = 9, PARADROP = 10,
     SENTRY = 11, HEAL = 12, MOVE_TO_UNIT = 13, RECON = 14,
     AIR_PATROL = 15, SEA_PATROL = 16, CLEAN_FALLOUT = 17,
-    SLEEP_UNTIL_HEALED = 18, FORTIFY_UNTIL_HEALED = 19
+    SLEEP_UNTIL_HEALED = 18, FORTIFY_UNTIL_HEALED = 19,
+    EXPLORE = 20
 }
 
 # Phase flags for hooks

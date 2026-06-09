@@ -95,9 +95,29 @@ func _build_unit_panel(unit_id: int, gs) -> void:
 		btn.connect("pressed", self, "_on_action_pressed", [item])
 		add_child(btn)
 
+	# Issue 6: Worker improvement buttons — shown for units that can build.
+	var db = _facade._db
+	if db.get_unit(u.unit_type_id).get("can_build", false):
+		_add_worker_buttons(u, gs)
+
+	# Issue 13: Explore button — shown for scout/recon units.
+	var udata_sel: Dictionary = db.get_unit(u.unit_type_id)
+	var cls_sel: String = str(udata_sel.get("classification", ""))
+	var has_explore_tag: bool = "explore" in udata_sel.get("tags", [])
+	if cls_sel == "recon" or has_explore_tag:
+		if not u.is_exploring:
+			var explore_btn: Button = Button.new()
+			explore_btn.text = "Explore"
+			explore_btn.connect("pressed", self, "_on_explore_pressed", [u.id])
+			add_child(explore_btn)
+		else:
+			var stop_exp_btn: Button = Button.new()
+			stop_exp_btn.text = "Stop Exploring"
+			stop_exp_btn.connect("pressed", self, "_on_wake_pressed", [u.id])
+			add_child(stop_exp_btn)
+
 	# Heal-until-recovered buttons (Issue 9): shown when the unit is injured.
 	if u.health < 100:
-		var db = _facade._db
 		var sleep_btn: Button = Button.new()
 		sleep_btn.text = "Sleep Until Healed"
 		sleep_btn.connect("pressed", self, "_on_sleep_until_healed", [u.id])
@@ -210,6 +230,86 @@ func _on_sleep_until_healed(unit_id: int) -> void:
 func _on_fortify_until_healed(unit_id: int) -> void:
 	_facade.apply_command(Commands.mission_fortify_until_healed(
 		_facade.get_state().current_player_id, unit_id))
+
+# Issue 6: Build the worker improvement buttons for a unit standing on `tile`.
+# Only shows improvements valid for the tile's landform and for which the
+# player holds the required technology. Skips upgrade-only improvements (they
+# are placed automatically), the current improvement (already built), and road
+# if the road command is already exposed by the flyout menu.
+func _add_worker_buttons(unit, gs) -> void:
+	var pid: int = gs.current_player_id
+	var player = gs.get_player(pid)
+	if player == null:
+		return
+	var db = _facade._db
+	var tile = gs.map.get_tile(unit.x, unit.y)
+	if tile == null:
+		return
+	var ter: Dictionary = db.get_terrain(tile.terrain_id)
+	var landform: String = str(ter.get("landform", "flat"))
+	# A tile has a river if its north or west border is a river edge, or if
+	# the tile to the south/east has a north/west river edge bordering this tile.
+	var has_river: bool = tile.river_n or tile.river_w
+	if not has_river:
+		var south: = gs.map.get_tile(tile.x, tile.y + 1)
+		if south != null and south.river_n:
+			has_river = true
+	if not has_river:
+		var east: = gs.map.get_tile(tile.x + 1, tile.y)
+		if east != null and east.river_w:
+			has_river = true
+	var feature_id: String = tile.feature_id
+	var current_imp: String = tile.improvement_id
+
+	for imp_id in db.improvements:
+		var imp: Dictionary = db.improvements[imp_id]
+		# Skip upgrade-only improvements (cottage→hamlet→village→town chain etc.).
+		if bool(imp.get("upgrade_only", false)):
+			continue
+		# Road is already handled by MISSION_BUILD_ROAD in the flyout; skip here.
+		if imp_id == "road":
+			continue
+		# Skip if already built on this tile.
+		if imp_id == current_imp:
+			continue
+		# Check landform compatibility.
+		var allowed: Array = imp.get("allowed_landforms", [])
+		if not (landform in allowed):
+			continue
+		# Check river requirement.
+		if bool(imp.get("requires_river", false)) and not has_river:
+			continue
+		# Check feature requirement.
+		var req_feat: String = str(imp.get("requires_feature", ""))
+		if req_feat != "" and feature_id != req_feat:
+			continue
+		# Check tech requirement.
+		var tech_req = imp.get("tech_required", null)
+		if tech_req != null and tech_req != "" and not player.has_tech(str(tech_req)):
+			continue
+		# All checks passed: show a button for this improvement.
+		var imp_name: String = str(imp.get("name", imp_id.capitalize()))
+		var btn: Button = Button.new()
+		btn.text = "Build " + imp_name
+		btn.connect("pressed", self, "_on_build_improvement_pressed", [unit.id, imp_id])
+		add_child(btn)
+
+func _on_build_improvement_pressed(unit_id: int, improvement_id: String) -> void:
+	_facade.apply_command(Commands.build_improvement(
+		_facade.get_state().current_player_id, unit_id, improvement_id))
+	rebuild()
+
+# Issue 13: Start Explore mission on a scout/recon unit.
+func _on_explore_pressed(unit_id: int) -> void:
+	_facade.apply_command(Commands.mission_explore(
+		_facade.get_state().current_player_id, unit_id))
+	rebuild()
+
+# Stop Exploring: wake the unit (cancel explore stance).
+func _on_wake_pressed(unit_id: int) -> void:
+	_facade.apply_command(Commands.unit_wake(
+		_facade.get_state().current_player_id, unit_id))
+	rebuild()
 
 func _clear_children() -> void:
 	# Remove from the tree immediately (queue_free alone is deferred, which can

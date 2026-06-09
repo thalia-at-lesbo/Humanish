@@ -231,6 +231,11 @@ static func mission_sleep_until_healed(player_id: int, unit_id: int) -> Dictiona
 static func mission_fortify_until_healed(player_id: int, unit_id: int) -> Dictionary:
 	return {"type": IDs.CommandType.MISSION_FORTIFY_UNTIL_HEALED, "player_id": player_id, "unit_id": unit_id}
 
+# Set a scout/recon unit to Explore: it auto-moves toward unexplored territory
+# each turn, never initiates combat, and wakes the player if an enemy is spotted.
+static func mission_explore(player_id: int, unit_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.MISSION_EXPLORE, "player_id": player_id, "unit_id": unit_id}
+
 # ── Missionary belief spread (§8) ─────────────────────────────────────────────
 
 # Spread the missionary's religion to the settlement on its tile; consumes the

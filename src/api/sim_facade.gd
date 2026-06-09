@@ -297,7 +297,8 @@ func apply_command(cmd: Dictionary) -> bool:
 		IDs.CommandType.MISSION_AIR_PATROL, IDs.CommandType.MISSION_SEA_PATROL, \
 		IDs.CommandType.MISSION_CLEAN_FALLOUT, \
 		IDs.CommandType.MISSION_SLEEP_UNTIL_HEALED, \
-		IDs.CommandType.MISSION_FORTIFY_UNTIL_HEALED:
+		IDs.CommandType.MISSION_FORTIFY_UNTIL_HEALED, \
+		IDs.CommandType.MISSION_EXPLORE:
 			return _cmd_mission(cmd)
 		IDs.CommandType.NUCLEAR_STRIKE:
 			return _cmd_nuclear_strike(cmd)
@@ -385,6 +386,9 @@ func _cmd_end_turn(player_id: int) -> bool:
 	var player: Player = _gs.get_player(player_id)
 	if player == null:
 		return false
+
+	# Advance all exploring scouts for this player before the turn pipeline runs.
+	_run_explore_missions(player_id)
 
 	TurnEngine.player_step(_gs, player_id, _hooks)
 	_drain_flips()
@@ -908,6 +912,40 @@ func _cmd_build_improvement(cmd: Dictionary) -> bool:
 	var imp_id: String = str(cmd.get("improvement_id", ""))
 	var imp: Dictionary = _db.get_improvement(imp_id)
 	if imp.empty():
+		return false
+	# Upgrade-only improvements (e.g. hamlet/village/town) are placed by the
+	# cottage growth system, never by direct command.
+	if bool(imp.get("upgrade_only", false)):
+		return false
+	# Validate the tile's landform against the improvement's allowed list.
+	var tile: Tile = _gs.map.get_tile(u.x, u.y)
+	if tile == null:
+		return false
+	var ter: Dictionary = _db.get_terrain(tile.terrain_id)
+	var landform: String = str(ter.get("landform", "flat"))
+	var allowed: Array = imp.get("allowed_landforms", [])
+	if not allowed.empty() and not (landform in allowed):
+		return false
+	# Validate the tech requirement.
+	var tech_req = imp.get("tech_required", null)
+	if tech_req != null and str(tech_req) != "" and not p.has_tech(str(tech_req)):
+		return false
+	# Validate river requirement (watermill etc.).
+	if bool(imp.get("requires_river", false)):
+		var has_river: bool = tile.river_n or tile.river_w
+		if not has_river:
+			var s_tile: Tile = _gs.map.get_tile(u.x, u.y + 1)
+			if s_tile != null and s_tile.river_n:
+				has_river = true
+		if not has_river:
+			var e_tile: Tile = _gs.map.get_tile(u.x + 1, u.y)
+			if e_tile != null and e_tile.river_w:
+				has_river = true
+		if not has_river:
+			return false
+	# Validate feature requirement (lumbermill needs forest, etc.).
+	var req_feat: String = str(imp.get("requires_feature", ""))
+	if req_feat != "" and tile.feature_id != req_feat:
 		return false
 	u.building_improvement = imp_id
 	# Serfdom speeds improvement construction (§8): fewer build turns.
@@ -1585,6 +1623,7 @@ func _cmd_unit_command(cmd: Dictionary) -> bool:
 			u.is_sleeping = false
 			u.is_sleep_until_healed = false
 			u.is_fortify_until_healed = false
+			u.is_exploring = false
 			u.has_moved = false
 			u.movement_left = u.movement_total
 		IDs.CommandType.UNIT_SLEEP:
@@ -1603,6 +1642,7 @@ func _cmd_unit_command(cmd: Dictionary) -> bool:
 			u.is_sleeping = false
 			u.is_sleep_until_healed = false
 			u.is_fortify_until_healed = false
+			u.is_exploring = false
 			u.goto_x = -1
 			u.goto_y = -1
 			u.has_moved = false
@@ -1663,7 +1703,8 @@ func _cmd_mission(cmd: Dictionary) -> bool:
 		IDs.CommandType.MISSION_MOVE_TO:
 			# A per-unit move order: only this unit leaves the tile, so it can be
 			# peeled off a stack (unlike MOVE_STACK with no unit_ids, which moves
-			# the whole tile together).
+			# the whole tile together). A manual move cancels the explore mission.
+			u.is_exploring = false
 			var mc: Dictionary = {
 				"type": IDs.CommandType.MOVE_STACK,
 				"player_id": player_id,
@@ -1774,6 +1815,27 @@ func _cmd_mission(cmd: Dictionary) -> bool:
 			u.is_sleeping = false
 			u.has_moved = true
 			u.movement_left = 0
+		IDs.CommandType.MISSION_EXPLORE:
+			# Explore mission: only recon/scout units (classification "recon" or
+			# units with the "explore" tag) may use this. Sets is_exploring; the
+			# actual move happens at the start of each turn via _run_explore_missions.
+			var utype_exp: Dictionary = _db.get_unit(u.unit_type_id)
+			var cls_exp: String = str(utype_exp.get("classification", ""))
+			var has_explore_tag: bool = "explore" in utype_exp.get("tags", [])
+			if cls_exp != "recon" and not has_explore_tag:
+				return false
+			u.is_exploring = true
+			u.is_sentry = false
+			u.is_sleeping = false
+			u.is_healing = false
+			u.is_patrolling = false
+			# Don't consume movement; the auto-move this turn is handled immediately.
+			_explore_step(u)
+			if not u.is_exploring:
+				# Woken by enemy spot during the first step — notify.
+				_add_notification(
+					_db.get_unit(u.unit_type_id).get("name", u.unit_type_id).capitalize()
+						+ " spotted an enemy and stopped exploring.", "major")
 		IDs.CommandType.MISSION_MOVE_TO_UNIT:
 			var tu: Unit = _gs.get_unit(int(cmd.get("target_unit_id", -1)))
 			if tu == null:
@@ -1801,6 +1863,86 @@ func _cmd_mission(cmd: Dictionary) -> bool:
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
 	return true
+
+# ── Explore mission helpers ────────────────────────────────────────────────────
+
+# Run one explore step for a single unit. Picks a random passable, non-enemy
+# neighbour to move toward and takes one step. If an enemy unit is within the
+# unit's sight range the mission ends and the player is alerted. When no valid
+# step can be found (surrounded or at map edge), the mission also ends.
+func _explore_step(u: Unit) -> void:
+	if not u.is_exploring:
+		return
+	var player_id: int = u.owner_player_id
+	var sight: int = _db.get_constant("unit_sight", 2)
+	# Check for enemies within sight: if any are visible, wake the scout.
+	for eu in _gs.units:
+		if eu.owner_player_id == player_id:
+			continue
+		if eu.owner_player_id != -2 and not _gs.are_at_war(player_id, eu.owner_player_id):
+			continue
+		if _gs.map.distance(u.x, u.y, eu.x, eu.y) <= sight:
+			u.is_exploring = false
+			u.has_moved = true
+			u.movement_left = 0
+			_add_notification(
+				str(_db.get_unit(u.unit_type_id).get("name", u.unit_type_id.capitalize()))
+					+ " spotted an enemy — explore cancelled.", "major")
+			return
+	# Collect candidate tiles: passable non-enemy-occupied neighbours.
+	var candidates: Array = []
+	for nb in _gs.map.neighbours8(u.x, u.y):
+		var ter: Dictionary = _db.get_terrain(nb.terrain_id)
+		# Skip impassable terrain and enemy-occupied tiles.
+		if ter.get("impassable", false):
+			continue
+		if _db.get_unit(u.unit_type_id).get("domain", "land") == "land" \
+				and ter.get("domain", "land") != "land":
+			continue
+		# Never walk into an enemy: skip any tile that holds a hostile unit.
+		var has_enemy: bool = false
+		for eu2 in _gs.units:
+			if eu2.x == nb.x and eu2.y == nb.y and eu2.owner_player_id != player_id:
+				if eu2.owner_player_id == -2 or _gs.are_at_war(player_id, eu2.owner_player_id):
+					has_enemy = true
+					break
+		if has_enemy:
+			continue
+		candidates.append(nb)
+	if candidates.empty():
+		u.is_exploring = false
+		u.has_moved = true
+		u.movement_left = 0
+		_add_notification(
+			str(_db.get_unit(u.unit_type_id).get("name", u.unit_type_id.capitalize()))
+				+ " has nowhere to explore.", "info")
+		return
+	# Pick a random candidate and move there (draws from shared RNG).
+	var idx: int = _gs.rng.randi_range(0, candidates.size() - 1)
+	var target: Tile = candidates[idx]
+	var mc: Dictionary = {
+		"type": IDs.CommandType.MOVE_STACK,
+		"player_id": player_id,
+		"from_x": u.x, "from_y": u.y,
+		"to_x": target.x, "to_y": target.y,
+		"unit_ids": [u.id]
+	}
+	_cmd_move_stack(mc)
+
+# Run explore steps for all exploring units owned by `player_id`. Called at
+# the start of _cmd_end_turn so each exploring scout advances before the turn
+# pipeline runs. Any scout woken by a sighted enemy has its notification added
+# here too.
+func _run_explore_missions(player_id: int) -> void:
+	var ids: Array = []
+	for u in _gs.units:
+		if u.owner_player_id == player_id and u.is_exploring:
+			ids.append(u.id)
+	for uid in ids:
+		var u: Unit = _gs.get_unit(uid)
+		if u == null or not u.is_exploring:
+			continue
+		_explore_step(u)
 
 func _cmd_do_control(cmd: Dictionary) -> bool:
 	var ctrl_type: int = int(cmd.get("ctrl_type", -1))
@@ -1940,7 +2082,8 @@ func cycle_idle_units(workers_only: bool = false) -> void:
 			continue
 		if u.has_moved or u.is_fortified or u.is_sentry or u.is_patrolling \
 				or u.is_healing or u.is_sleeping \
-				or u.is_sleep_until_healed or u.is_fortify_until_healed:
+				or u.is_sleep_until_healed or u.is_fortify_until_healed \
+				or u.is_exploring:
 			continue
 		if workers_only and not _db.get_unit(u.unit_type_id).get("can_build", false):
 			continue
@@ -2061,7 +2204,8 @@ func get_end_turn_state() -> int:
 	for u in _gs.units:
 		if u.owner_player_id == _gs.current_player_id and not u.has_moved \
 				and not u.is_fortified and not u.is_sleeping \
-				and not u.is_sleep_until_healed and not u.is_fortify_until_healed:
+				and not u.is_sleep_until_healed and not u.is_fortify_until_healed \
+				and not u.is_exploring:
 			return 2
 	return 0
 

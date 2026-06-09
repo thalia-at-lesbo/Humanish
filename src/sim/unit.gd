@@ -83,6 +83,9 @@ var is_sleeping: bool = false
 # grants the fortify defence bonus while waiting.
 var is_sleep_until_healed: bool = false
 var is_fortify_until_healed: bool = false
+# Explore mission (§3.3): scout/recon unit auto-moves toward unexplored territory.
+# Cleared when an enemy is spotted nearby or no new territory is reachable.
+var is_exploring: bool = false
 
 func has_promotion(promo_id: String) -> bool:
 	return promo_id in promotions
@@ -162,7 +165,8 @@ func serialize() -> Dictionary:
 		"is_sentry": is_sentry, "is_patrolling": is_patrolling,
 		"is_healing": is_healing, "is_sleeping": is_sleeping,
 		"is_sleep_until_healed": is_sleep_until_healed,
-		"is_fortify_until_healed": is_fortify_until_healed
+		"is_fortify_until_healed": is_fortify_until_healed,
+		"is_exploring": is_exploring
 	}
 
 static func deserialize(d: Dictionary):
@@ -197,4 +201,5 @@ static func deserialize(d: Dictionary):
 	u.is_sleeping = bool(d.get("is_sleeping", false))
 	u.is_sleep_until_healed = bool(d.get("is_sleep_until_healed", false))
 	u.is_fortify_until_healed = bool(d.get("is_fortify_until_healed", false))
+	u.is_exploring = bool(d.get("is_exploring", false))
 	return u
