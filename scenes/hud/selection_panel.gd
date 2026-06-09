@@ -251,11 +251,11 @@ func _add_worker_buttons(unit, gs) -> void:
 	# the tile to the south/east has a north/west river edge bordering this tile.
 	var has_river: bool = tile.river_n or tile.river_w
 	if not has_river:
-		var south: = gs.map.get_tile(tile.x, tile.y + 1)
+		var south = gs.map.get_tile(tile.x, tile.y + 1)
 		if south != null and south.river_n:
 			has_river = true
 	if not has_river:
-		var east: = gs.map.get_tile(tile.x + 1, tile.y)
+		var east = gs.map.get_tile(tile.x + 1, tile.y)
 		if east != null and east.river_w:
 			has_river = true
 	var feature_id: String = tile.feature_id

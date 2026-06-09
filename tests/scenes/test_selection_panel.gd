@@ -21,6 +21,45 @@ func _count_buttons_named(node, text):
 			n += 1
 	return n
 
+func test_panel_script_loads_and_instances() -> void:
+	# Canary: a parse error anywhere in selection_panel.gd makes load().new()
+	# return null, which leaves the live SelectionPanel node scriptless — it then
+	# renders nothing (no unit/city info, no action buttons) even though the rules
+	# layer is fine. GUT does not fail a suite on a script load error, so without
+	# this explicit assertion the breakage stays green. Guards that regression.
+	# Use can_instance() rather than new(): a script with a parse error still loads
+	# as a (broken) GDScript object, and calling new() on it raises an engine error
+	# that GUT swallows AND aborts the test before any later assert. can_instance()
+	# reports the compile state without throwing, so it actually fails the suite.
+	var script = load("res://scenes/hud/selection_panel.gd")
+	assert_not_null(script, "selection_panel.gd must load")
+	assert_true(script.can_instance(),
+		"selection_panel.gd must compile with no parse error")
+
+func test_worker_shows_build_action_buttons() -> void:
+	# Exercises the worker-improvement path (_add_worker_buttons), the code that
+	# carried the parse error. A worker on a flat tile with Agriculture should
+	# offer a "Build Farm" action.
+	var facade = setup_facade(91, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	gs.get_player(pid).technologies = ["agriculture"]
+	var tile = gs.map.get_tile(3, 3)
+	tile.terrain_id = "grassland"          # flat landform
+	tile.improvement_id = ""
+	tile.feature_id = ""
+	var worker = make_unit(gs, "worker", pid, 3, 3)
+
+	var panel = load("res://scenes/hud/selection_panel.gd").new()
+	add_child_autofree(panel)
+	panel.init(facade, null)
+	facade.select_unit(worker.id)
+	panel.rebuild()
+	assert_eq(_count_buttons_named(panel, "Build Farm"), 1,
+		"A worker on a flat tile with Agriculture offers Build Farm")
+
 func test_unit_panel_omits_open_city_button() -> void:
 	var facade = setup_facade(81, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
