@@ -424,6 +424,11 @@ func _zoom_toward_cursor(new_zoom: float, cursor_pos: Vector2) -> void:
 	_offset = cursor_pos - world_pos * _zoom
 	_camera_changed()
 
+# Shift the camera by a pixel delta (left-button drag-pan from InputRouter).
+func pan_by(delta: Vector2) -> void:
+	_offset += delta
+	_camera_changed()
+
 func pan_to_tile(tx: int, ty: int) -> void:
 	var vp: Vector2 = get_viewport_rect().size
 	_offset = vp * 0.5 - Vector2(tx * TILE_SIZE, ty * TILE_SIZE) * _zoom
