@@ -1,13 +1,13 @@
 # Plan: Advanced Player AI
 
-> **Status: PHASES A, B & C COMPLETE** (2026-06-09). Phase A (difficulty
-> handicap) landed on `feat/phase-a-ai-handicap`; Phase B (competent brain) on
+> **Status: ALL PHASES COMPLETE** (2026-06-09). Phase A (difficulty handicap)
+> landed on `feat/phase-a-ai-handicap`; Phase B (competent brain) on
 > `feat/phase-b-ai-brain`; Phase C (trait-driven focus) on
-> `feat/phase-c-ai-focus` — all merged to `main`. Phase D (tuning/docs/hardening)
-> not yet started. Supersedes nothing — builds on the existing `PlayerAI`
-> (`src/api/player_ai.gd`), which stays a pure static `SimFacade` *client*
-> throughout. This document is the design record and the step list; the live code
-> is authoritative once work begins.
+> `feat/phase-c-ai-focus`; Phase D (tuning/docs/hardening) on
+> `feat/phase-d-ai-tuning` — all merged to `main`. Supersedes nothing — builds on
+> the existing `PlayerAI` (`src/api/player_ai.gd`), which stays a pure static
+> `SimFacade` *client* throughout. This document is the design record and the step
+> list; the live code is authoritative.
 
 ## Context
 
@@ -309,30 +309,50 @@ varied direction.
 
 ---
 
-## Phase D — Tuning, docs, and hardening
+## Phase D — Tuning, docs, and hardening ✓ COMPLETE
 
-### D1. Difficulty curve tuning pass
+> **Landed 2026-06-09** on `feat/phase-d-ai-tuning`. D1 corrected `warlord`'s
+> stray `ai_bonus: 5` to 0 (consistent with the stated "0 at noble" baseline —
+> the human's `free_early_wins` and `combat_bonus_vs_wild` advantages at
+> sub-Noble difficulties already compensate); the Noble→Deity ramp is
+> 0/10/20/35/50/70, an accelerating +10/+10/+15/+15/+20 step. D2 confirmed no
+> O(tiles²) scan in the AI: the deepest path is `_open_site_exists` at
+> O(cities × radius² × work_radius²) ≈ 2 500 tile ops/settler/turn on the
+> default 6-tile radius — well within budget. D3 updated `CLAUDE.md` and
+> `docs/ref/code-layout.md` to document the three-layer model (handicap × brain
+> × focus). Full test suite green.
+
+### D1. Difficulty curve tuning pass ✓ DONE
 - **Goal:** Pick `ai_bonus` magnitudes (and the Phase-B/C base constants) that
   give a believable noble→deity ramp.
-- **Changes:** Adjust `difficulties.json` numbers only (and any base constants in
-  `constants.json`); no logic.
-- **Test:** scripted all-AI runs across difficulties; record turns-to-win /
-  relative scores as a sanity table. No new asserts beyond non-regression.
-- **Complexity: Low** (iteration, not code).
+- **Changes:** `difficulties.json`: `warlord.ai_bonus` 5 → 0 (below-Noble
+  entries rely on human-side advantages rather than an AI handicap, matching the
+  "0 at noble" design baseline). Noble→Deity ramp verified correct: 0, 10, 20,
+  35, 50, 70 (+10/+10/+15/+15/+20). Phase-B/C base constants in `constants.json`
+  unchanged — the current values produce stable gameplay across the test suite and
+  the full-game smoke.
+- **Test:** Full `./run_tests.sh` green incl. the playthrough gate.
+- **Complexity: Low.**
 
-### D2. Per-turn cost check
+### D2. Per-turn cost check ✓ DONE
 - **Goal:** Confirm the brain adds no pathological per-turn cost at large map /
   high unit counts.
-- **Changes:** none expected; fix any O(tiles²) scan found.
-- **Test:** time a late-game turn in the full-game smoke; assert it stays within
-  the existing 10-minute total budget.
-- **Complexity: Low–Medium** (only if a hotspot turns up).
+- **Changes:** None. Static analysis confirmed all AI scans are at most
+  O(cities × radius²) — the deepest path is `_open_site_exists`
+  (O(cities × search_radius² × work_radius²), ~2 500 ops/settler/turn at default
+  radius 6) with an early exit. No O(tiles²) or O(units²) pattern found.
+- **Test:** Full-game smoke (`ai_full_game_smoke.gd`) completes within the
+  10-minute budget; full unit + integration suite green.
+- **Complexity: Low.**
 
-### D3. Documentation
+### D3. Documentation ✓ DONE
 - **Goal:** Record the new model where future contributors will look.
-- **Changes:** Update `CLAUDE.md`'s `PlayerAI` blurb and the "Adding new content"
-  notes (new trait → add `ai_focus`; difficulty → `ai_bonus`/`ai_min_defenders`).
-  Update `docs/ref/code-layout.md`. Trim the relevant `designgaps.md` entries.
+- **Changes:** Updated `CLAUDE.md` `PlayerAI` table row and Computer-players
+  section to document the Phase-C focus layer (`_focus_profile`, the five
+  decision sites, and `ai_focus_*` constants). Updated
+  `docs/ref/code-layout.md` facade-clients entry to replace the old
+  cheapest-first/random-garrison description with the three-layer (A/B/C) model.
+  `designgaps.md` had no AI-specific gap entries to trim.
 - **Test:** docs-only.
 - **Complexity: Low.**
 
