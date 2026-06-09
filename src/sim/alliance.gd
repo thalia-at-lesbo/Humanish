@@ -64,13 +64,27 @@ func serialize() -> Dictionary:
 static func deserialize(d: Dictionary):
 	var a = load("res://src/sim/alliance.gd").new()
 	a.id = int(d["id"])
-	a.member_player_ids = d.get("member_player_ids", []).duplicate()
-	a.at_war_with = d.get("at_war_with", []).duplicate()
-	a.contacts = d.get("contacts", []).duplicate()
+	# Every array below holds player/alliance IDs (ints). JSON.parse yields floats
+	# for them, and a float key (2.0) is a *different* Dictionary key from the int
+	# key (2) it is later compared against — which silently breaks membership tests
+	# and intel/permanent-ally lookups after a load. Coerce them back to int.
+	a.member_player_ids = _to_int_array(d.get("member_player_ids", []))
+	a.at_war_with = _to_int_array(d.get("at_war_with", []))
+	a.contacts = _to_int_array(d.get("contacts", []))
 	a.is_subordinate_to = int(d.get("is_subordinate_to", -1))
-	a.tributaries = d.get("tributaries", []).duplicate()
+	a.tributaries = _to_int_array(d.get("tributaries", []))
 	a.shared_research_store = int(d.get("shared_research_store", 0))
-	a.war_fatigue = d.get("war_fatigue", {}).duplicate()
+	# war_fatigue is alliance_id(int) -> int; JSON keys come back as strings.
+	a.war_fatigue = {}
+	var wf: Dictionary = d.get("war_fatigue", {})
+	for k in wf:
+		a.war_fatigue[int(k)] = int(wf[k])
 	a.pending_trades = d.get("pending_trades", []).duplicate(true)
-	a.permanent_allies = d.get("permanent_allies", []).duplicate()
+	a.permanent_allies = _to_int_array(d.get("permanent_allies", []))
 	return a
+
+static func _to_int_array(src: Array) -> Array:
+	var out: Array = []
+	for v in src:
+		out.append(int(v))
+	return out

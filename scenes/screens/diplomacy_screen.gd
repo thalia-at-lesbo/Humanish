@@ -60,14 +60,18 @@ func rebuild() -> void:
 	title.text = "Diplomacy — " + my_p.name
 	vbox.add_child(title)
 
-	# Show every other player regardless of contact; alliances start with no
-	# contacts so filtering on contacts would hide every row at game start.
+	# Only show players we have met (§7 first contact): a rival appears once either
+	# side's unit/city has sighted the other's unit, city, or border. Contact is
+	# permanent, so a met player stays listed thereafter. TurnEngine maintains the
+	# per-alliance contacts; here we just read them.
 	var any_shown: bool = false
 	for p in gs.players:
 		if p.id == my_p.id:
 			continue
 		var other_alliance = gs.get_player_alliance(p.id)
 		if other_alliance == null:
+			continue
+		if my_alliance == null or not my_alliance.has_contact_with(other_alliance.id):
 			continue
 		any_shown = true
 
@@ -125,7 +129,7 @@ func rebuild() -> void:
 
 	if not any_shown:
 		var lbl: Label = Label.new()
-		lbl.text = "(No other civilizations)"
+		lbl.text = "(You have not met any other civilizations yet)"
 		vbox.add_child(lbl)
 
 	_add_close(vbox)

@@ -158,7 +158,14 @@ static func deserialize(d: Dictionary):
 	p.research_store = int(d.get("research_store", 0))
 	p.technologies = d.get("technologies", []).duplicate()
 	p.era = int(d.get("era", 0))
-	p.intel_points = d.get("intel_points", {}).duplicate()
+	# intel_points is keyed by alliance_id (int). JSON turns every dict key into a
+	# string on save, so coerce back to int on load — otherwise the loaded "2" key
+	# never matches the int lookups in _apply_intelligence and a phantom duplicate
+	# entry accumulates separately (a save/load determinism break).
+	p.intel_points = {}
+	var loaded_intel: Dictionary = d.get("intel_points", {})
+	for k in loaded_intel:
+		p.intel_points[int(k)] = int(loaded_intel[k])
 	p.alliance_id = int(d.get("alliance_id", -1))
 	p.free_early_wins = int(d.get("free_early_wins", 0))
 	p.transition_turns = int(d.get("transition_turns", 0))

@@ -26,6 +26,13 @@ static func world_step(gs: GameState, hooks: Hooks) -> void:
 	if not hooks.run(IDs.Phase.WORLD_ADVANCE_ALLIANCES, gs):
 		_advance_alliances(gs)
 
+	# First contact (§7): a player "meets" another once either side's unit or city
+	# sees the other's unit, city, or border tile. Contact is mutual and permanent
+	# (it is only ever appended to alliance.contacts), so a met player stays known
+	# even if they later move out of view. Runs each world step alongside alliance
+	# bookkeeping, independent of the per-phase hook.
+	_detect_sight_contact(gs)
+
 	# Economic organizations spread across settlements (§8). Cheap; runs each
 	# world step independent of the per-phase hooks.
 	EconOrgs.spread_all(gs, gs.rng)
@@ -1325,6 +1332,70 @@ static func _advance_alliances(gs: GameState) -> void:
 				var split: Array = p.split_commerce(s.output_commerce)
 				research_contrib += split[1]
 			alliance.shared_research_store += Fixed.scale(research_contrib, share_pct)
+
+# §7 first contact: establish mutual, permanent contact between any two players
+# when one's sight (unit_sight around a unit, city_sight around a city) covers a
+# tile where the other is present — a unit, a city, or an owned border tile. This
+# is what populates the diplomacy roster: a player only appears to another once
+# they have met. Contact is only appended (never removed) so it is sticky.
+static func _detect_sight_contact(gs: GameState) -> void:
+	var db: DataDB = gs.db
+	if db == null or gs.map == null:
+		return
+	var unit_sight: int = db.get_constant("unit_sight", 2)
+	var city_sight: int = db.get_constant("city_sight", 3)
+
+	# Presence map: tile key -> { player_id: true } for every player present on
+	# that tile via a unit, a city, or border ownership. Wild forces (owner < 0)
+	# are excluded — they are not diplomatic players.
+	var presence: Dictionary = {}
+	for u in gs.units:
+		if u.owner_player_id >= 0:
+			_add_presence(presence, u.x, u.y, u.owner_player_id)
+	for s in gs.settlements:
+		if s.owner_player_id >= 0:
+			_add_presence(presence, s.x, s.y, s.owner_player_id)
+	for tile in gs.map.all_tiles():
+		if tile.owner_player_id >= 0:
+			_add_presence(presence, tile.x, tile.y, tile.owner_player_id)
+
+	# Each sight source reveals who is present within its radius; everyone seen
+	# meets the seer (mutually).
+	for u in gs.units:
+		if u.owner_player_id >= 0:
+			_scan_sight_contact(gs, presence, u.x, u.y, unit_sight, u.owner_player_id)
+	for s in gs.settlements:
+		if s.owner_player_id >= 0:
+			_scan_sight_contact(gs, presence, s.x, s.y, city_sight, s.owner_player_id)
+
+static func _add_presence(presence: Dictionary, x: int, y: int, player_id: int) -> void:
+	var key: String = "%d,%d" % [x, y]
+	if not presence.has(key):
+		presence[key] = {}
+	presence[key][player_id] = true
+
+# For one sight source at (cx, cy) belonging to seer_id, walk the visible tiles
+# (Manhattan radius, matching the fog/wild sight model) and record contact with
+# every other player present on any of them.
+static func _scan_sight_contact(gs: GameState, presence: Dictionary,
+		cx: int, cy: int, radius: int, seer_id: int) -> void:
+	for t in gs.map.tiles_in_range(cx, cy, radius):
+		if gs.map.manhattan(cx, cy, t.x, t.y) > radius:
+			continue
+		var here: Dictionary = presence.get("%d,%d" % [t.x, t.y], {})
+		for other_id in here:
+			if int(other_id) != seer_id:
+				_ensure_mutual_contact(gs, seer_id, int(other_id))
+
+static func _ensure_mutual_contact(gs: GameState, pid_a: int, pid_b: int) -> void:
+	var a: Alliance = gs.get_player_alliance(pid_a)
+	var b: Alliance = gs.get_player_alliance(pid_b)
+	if a == null or b == null or a.id == b.id:
+		return
+	if not a.has_contact_with(b.id):
+		a.contacts.append(b.id)
+	if not b.has_contact_with(a.id):
+		b.contacts.append(a.id)
 
 static func _tile_upkeep(gs: GameState) -> void:
 	# Improvement maintenance (§3.3): each owned, improved tile charges its owner
