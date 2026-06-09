@@ -67,6 +67,9 @@ var _facade                          # SimFacade
 var _offset: Vector2 = Vector2.ZERO  # camera pan in pixels
 var _zoom: float = 1.0               # camera zoom factor
 
+var _dragging: bool = false
+var _drag_last_pos: Vector2 = Vector2.ZERO
+
 # Flash data: tile → flash expiry time (for combat)
 var _flash_tiles: Dictionary = {}
 # Move-order flash: tile → flash expiry time (for right-click move feedback)
@@ -382,10 +385,21 @@ func screen_to_tile(screen_pos: Vector2) -> Vector2:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
-		if event.button_index == BUTTON_WHEEL_UP and event.pressed:
+		if event.button_index == BUTTON_MIDDLE:
+			if event.pressed:
+				_dragging = true
+				_drag_last_pos = event.position
+			else:
+				_dragging = false
+			get_viewport().set_input_as_handled()
+		elif event.button_index == BUTTON_WHEEL_UP and event.pressed:
 			_zoom_toward_cursor(min(_zoom * 1.1, 4.0), event.position)
 		elif event.button_index == BUTTON_WHEEL_DOWN and event.pressed:
 			_zoom_toward_cursor(max(_zoom / 1.1, 0.25), event.position)
+	elif event is InputEventMouseMotion and _dragging:
+		_offset += event.position - _drag_last_pos
+		_drag_last_pos = event.position
+		_camera_changed()
 	elif event is InputEventKey and event.pressed:
 		var step: float = TILE_SIZE * _zoom
 		if event.scancode == KEY_LEFT:
