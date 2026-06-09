@@ -176,7 +176,7 @@ func _build() -> void:
 	_header(v, "Add to production")
 	var options = [
 		["unit", "warrior"], ["unit", "worker"], ["unit", "settler"],
-		["unit", "scout"], ["unit", "archer"],
+		["unit", "scout"], ["unit", "archer"], ["unit", "work_boat"],
 		["structure", "granary"], ["structure", "barracks"],
 		["structure", "library"], ["structure", "market"]
 	]
