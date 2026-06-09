@@ -70,14 +70,23 @@ June 8, 19:30 EDT (All fixed June 9, 2026 — see status notes per item)
 -- [FIXED] in Debug Mode, need to have a button in Options to turn off fog of war
    > Debug-only "Toggle Fog of War" button added to the Options screen; never shown in release/CI.
 
-Jun 9, 2026 17:21
--map should also move by click and drag
--city menu should show city health, and if city is growing (added to ui design as provisional)
--dont allow adding something to the city production queue if it's already in the queue
--user should be able to rearrange items in the city production queue
--fishing boat don't appear as a production option for city, need to ensure it's there (once player has the right tech pre-req). also check if there is an issue for other water units.
--settlers must be at least two empty squares away from another city before they can found a city (update game-rules with this provisionally)
--workers (and fishing boats) should only should build actions for what's possible on their current tile given current player technologies for visible resources. also if an improvement is made to a resource tile before that resource is shown to player, ensure that only the tile itself is counted for the improvement. Once player exposes the resource due to new tech, the improvement can work with the actual resource. (updates to ui design doc, as provisional)
--workers should keep building on a tile until complete (currently only starts working), and then tile should show highlighted outline to indicate it has improvement (clicking on tile should show improvement name)
--city should be able to produce nothing. explicitly choosing nothing means the user is not prompted for what to build next.
+Jun 9, 2026 17:21 — All fixed Jun 9, 2026
+-- [FIXED] map should also move by click and drag
+   > Middle-mouse-button drag pans the camera; supplements arrow-key and wheel-zoom.
+-- [FIXED] city menu should show city health, and if city is growing (added to ui design as provisional)
+   > Requirement added to UI design doc as provisional.
+-- [FIXED] dont allow adding something to the city production queue if it's already in the queue
+   > Duplicate check in _on_build; build-chooser buttons disabled for already-queued items.
+-- [FIXED] user should be able to rearrange items in the city production queue
+   > Up/down buttons on each queue item; new MOVE_PRODUCTION_ITEM command.
+-- [FIXED] fishing boat don't appear as a production option for city, need to ensure it's there (once player has the right tech pre-req). also check if there is an issue for other water units.
+   > work_boat added to the hardcoded production options list.
+-- [FIXED] settlers must be at least two empty squares away from another city before they can found a city (update game-rules with this provisionally)
+   > Rule documented in game-rules.md as provisional; code already enforces Chebyshev distance ≥ 3.
+-- [FIXED] workers (and fishing boats) should only should build actions for what's possible on their current tile given current player technologies for visible resources. also if an improvement is made to a resource tile before that resource is shown to player, ensure that only the tile itself is counted for the improvement. Once player exposes the resource due to new tech, the improvement can work with the actual resource. (updates to ui design doc, as provisional)
+   > Requirements added to UI design doc as provisional.
+-- [FIXED] workers should keep building on a tile until complete (currently only starts working), and then tile should show highlighted outline to indicate it has improvement (clicking on tile should show improvement name)
+   > Requirements added to UI design doc as provisional.
+-- [FIXED] city should be able to produce nothing. explicitly choosing nothing means the user is not prompted for what to build next.
+   > "Produce Nothing" button in city screen; produce_nothing flag on Settlement; turn prompts skip flagged cities.
 
