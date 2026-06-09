@@ -35,7 +35,7 @@ sections:
   "§4  Settlements":           "Growth, output split, production, contentment, wellbeing, culture, conquest (§4.8), cultural revolt (§4.9 provisional), tile maturation (§4.10 provisional)"
   "§5  Units":                 "Definition, movement, combat strength, combat resolution, XP & upgrades, healing & entrenchment, nuclear weapons (§5.7 provisional), naval blockade (§5.8 provisional)"
   "§6  Economy & research":    "Treasury, sliders, research graph, policies, specialists & Great People, draft (§6.6 provisional), trade routes (§6.7 provisional)"
-  "§7  Diplomacy & war":       "Alliances, trades, subordination, espionage (§7.1 provisional), world assemblies (§7.2 provisional)"
+  "§7  Diplomacy & war":       "Alliances, trades, subordination, espionage (§7.1 provisional), world assemblies (§7.2 provisional), diplomatic victory (§7.3 provisional)"
   "§8  Beliefs & orgs":        "Religion founding/spread, state religion (§8.1 provisional), missionary spread (§8.2 provisional)"
   "§9  Wild forces & events":  "Wild spawning (§9.2 provisional), wild-AI behaviour (§9.1 provisional), animals (§9.3 provisional), exploration rewards, scripted events"
   "§10 Win conditions":        "Last standing, dominance, endgame project, cultural, diplomatic, time"
@@ -54,6 +54,7 @@ provisional_sections:
   - "§6.7  Trade routes — yields placeholder"
   - "§7.1  Espionage — accumulation formula and mission effects"
   - "§7.2  World assemblies — session cadence, AI voting, resolution effects"
+  - "§7.3  Diplomatic victory — UN/Apostolic Palace thresholds, eligibility gates, the too-big rule"
   - "§8.1  State religion"
   - "§8.2  Missionary spread"
   - "§9.1  Wild-forces behaviour — all radii and cooldowns placeholder"
@@ -883,6 +884,53 @@ the open `pending` proposal and its cast `votes`, and standing effects) is seria
 gate; `pending_assembly_events` is the transient queue the facade drains into notifications and
 the `assembly_event` signal.
 
+### 7.3 Diplomatic victory (provisional)
+
+> **⚠️ Provisional — preliminary, not verified.** The thresholds, the Apostolic-Palace
+> cadence, the eligibility gates, and the "too big" share are placeholder constants in
+> `data/constants.json` (`un_diplo_pass_share`, `ap_diplo_pass_share`,
+> `ap_diplo_victory_interval`, `diplo_too_big_share`) and have **not** been balance-tested.
+
+A **Diplomatic victory** (§10) is won by carrying a **supreme-leadership** election (the
+`diplomatic_victory` resolution, §7.2) in a world assembly. It is available only when
+`"diplomatic"` is among the enabled win conditions. There are **two paths**, one per founding
+wonder, with different thresholds and gates; on success the **candidate's alliance** wins the
+game immediately (`Assembly.apply_effect` sets `winning_alliance_id`). The per-resolution
+`pass_share` in `data/resolutions.json` is **not** used for this motion — the threshold is
+body-dependent and computed in code (`Assembly._pass_share_for`).
+
+* **United Nations (secular).** Any player may build the United Nations (it requires the
+  **Mass Media** technology), but only a player who has itself **researched Mass Media** may
+  stand as the winning candidate. Once a **Secretary-General** (the secular resident) is seated,
+  the body may put the supreme-leadership motion forward from the resident's session agenda. The
+  motion carries at **`un_diplo_pass_share` (60%)** of the chamber's total vote weight. Secular
+  vote weight is a member's **total governed population**.
+
+* **Apostolic Palace (religious).** The supreme-leadership motion **appears automatically every
+  `ap_diplo_victory_interval` (50) turns**, independent of the resident's agenda, but only while
+  **every living civilisation holds the assembly belief** in at least one city (the *AP
+  eligibility rule*). The candidate is the strongest religious member; the wonder owner is also a
+  nominal candidate, but because the engine runs a single Yea/Nay ballot the motion fields
+  whichever of them polls highest — i.e. the front-runner — a deliberate simplification of the
+  reference game's two-candidate runoff. The motion carries at **`ap_diplo_pass_share` (75%)**.
+  Religious vote weight is the population of a member's cities holding the belief, **doubled** for
+  a member running that belief as its **state religion** (§8.1); a member need **not** run it as
+  state religion to vote, nor to be elected.
+
+* **The "too big" rule.** Regardless of the tally, a candidate **cannot win** if its own
+  **alliance** already casts **`diplo_too_big_share` (75%)** or more of the total vote weight —
+  there must be a genuine pool of other voters to carry it past the bar. A motion that clears the
+  vote but trips this rule (or the path-specific gate above) awards nothing and is surfaced as a
+  `victory_blocked` assembly event. (Measuring the share at the **alliance** level — rather than
+  the single candidate civ of the reference rule — keeps it consistent with the alliance-based
+  resolution of every other win condition, §10.)
+
+* **AI voting.** Computer members back their own bloc's candidate, and a **vassal** (a
+  subordinate alliance, §7) automatically backs its **overlord's** candidate; otherwise an AI
+  votes the motion down — it never hands the game to a rival. *(Provisional: the reference game
+  also keys votes on diplomatic attitude — Pleased/Friendly — which this engine does not yet
+  model, so relationship has no effect on the vote here.)*
+
 ---
 
 ## 8. Beliefs & economic organizations
@@ -1140,7 +1188,7 @@ conditions:
 | **Dominance** | An alliance controls a configured share of both land area and total population. |
 | **Endgame project** | An alliance completes and launches all parts of a multi-stage endgame project; its arrival ends the game. |
 | **Cultural** | A required number of an alliance's settlements each reach the highest influence level. |
-| **Diplomatic** | A candidate is elected by a diplomatic assembly with the required share of votes. |
+| **Diplomatic** | A candidate carries the supreme-leadership election in a world assembly — **60%** of the vote via the United Nations (candidate must hold Mass Media) or **75%** via the Apostolic Palace (every living civ must hold its belief). A candidate whose own alliance casts ≥ **75%** of the vote is barred ("too big"). See §7.3. |
 | **Time** | If no other condition is met by the final turn, the highest **score** wins. |
 
 **Score** is a weighted sum of population, land, technologies, and wonders, normalized

@@ -16,8 +16,8 @@
     "kind": "election",
     "body": "any",
     "effect": "diplomatic_victory",
-    "pass_share": 67,
-    "text": "A motion is laid before the assembly to recognise {candidate} as the foremost power of the age. Should two-thirds of the chamber assent, the world will bend to {candidate}'s leadership and the long contest of nations will be settled by acclamation rather than the sword."
+    "_pass_share_note": "Threshold is body-dependent and set in code (Assembly._pass_share_for): un_diplo_pass_share (60) for the secular UN, ap_diplo_pass_share (75) for the religious Apostolic Palace. No flat pass_share here.",
+    "text": "A motion is laid before the assembly to recognise {candidate} as the foremost power of the age. Should the chamber assent by the required share, the world will bend to {candidate}'s leadership and the long contest of nations will be settled by acclamation rather than the sword."
   },
 
   "force_peace": {

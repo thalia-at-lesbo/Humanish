@@ -39,13 +39,13 @@ static func _check_one(wc: Dictionary, game_state) -> int:
 			return _cultural(wc, game_state)
 		"diplomatic":
 			# Diplomatic victory is delivered *solely* by the world assembly's
-			# UN election: Assembly.apply_effect("diplomatic_victory") sets
-			# winning_alliance_id directly once the institution passes the motion
-			# (gated on "diplomatic" being enabled). The old crude population-share
-			# tally was removed — it awarded the game to whoever momentarily
-			# governed a 67% population majority, which one early city trivially
-			# does. This periodic check therefore never awards on its own. The full
-			# diplomatic condition is slated for a follow-up rework.
+			# supreme-leadership election: Assembly.apply_effect("diplomatic_victory")
+			# sets winning_alliance_id directly once the institution passes the motion
+			# at the body-dependent threshold (UN 60% / Apostolic Palace 75%), the
+			# candidate clears the path-specific gate (UN Mass Media / AP belief held
+			# by every civ), and the candidate's alliance is not itself "too big"
+			# (>= 75% of the vote). See game-rules.md §7.2 and Assembly. This periodic
+			# check therefore never awards on its own.
 			return -1
 		"time":
 			return _time(game_state)
