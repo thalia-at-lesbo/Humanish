@@ -70,6 +70,12 @@ func _ready() -> void:
 		_init_node("HUD/VBox/SelectionPanel", [_facade, world_view])
 		_init_node("HUD/VBox/MessageLog", [_facade])
 		_init_node("HUD/VBox/EndTurnButton", [_facade])
+		# Wire the minimap: give it the facade and the fog layer so it can read
+		# explored/visible tile sets. The minimap is enabled by default.
+		var minimap = get_node_or_null("HUD/Minimap")
+		if minimap != null and minimap.has_method("init"):
+			var fog = world_view.get_node_or_null("FogLayer") if world_view != null else null
+			minimap.init(_facade, fog)
 
 	# Wire full-screen overlays (city / tech / policy / save-load)
 	var screens = get_node_or_null("Screens")
@@ -127,6 +133,8 @@ func _ready() -> void:
 		# map on one of their units here at game start.
 		if world_view.has_method("center_on_player"):
 			world_view.center_on_player(_facade.get_state().current_player_id)
+		# Sync the minimap after the opening fog build.
+		_refresh_minimap(world_view)
 
 	# Remote multiplayer: refresh the view whenever the server pushes new state.
 	_wire_net_client(world_view)
@@ -159,6 +167,7 @@ func _on_net_state_synced(active: bool, world_view) -> void:
 		if active and world_view.has_method("center_on_player"):
 			world_view.center_on_player(my_id)
 	_facade.get_dirty().mark_all()
+	_refresh_minimap(world_view)
 
 func _on_net_game_over(alliance_id: int) -> void:
 	print("Remote game over — winning alliance: ", alliance_id)
@@ -210,6 +219,18 @@ func _try_close_open_screen(pause) -> bool:
 func get_facade():
 	return _facade
 
+# Notify the minimap to redraw after a fog rebuild or state change.
+func _refresh_minimap(world_view = null) -> void:
+	var minimap = get_node_or_null("HUD/Minimap")
+	if minimap == null or not minimap.has_method("refresh"):
+		return
+	# Re-hand the fog layer reference in case it wasn't ready at init time.
+	if world_view != null and minimap.has_method("set_fog_layer"):
+		var fog = world_view.get_node_or_null("FogLayer")
+		if fog != null:
+			minimap.set_fog_layer(fog)
+	minimap.refresh()
+
 func _on_game_won(alliance_id: int) -> void:
 	print("Game won by alliance: ", alliance_id)
 
@@ -224,6 +245,12 @@ func _on_screen_requested(screen_id: int) -> void:
 		var score_bar = get_node_or_null("HUD/VBox/TurnScoreBar")
 		if score_bar != null:
 			score_bar.visible = not score_bar.visible
+		return
+	# Minimap toggle: flip the minimap overlay on/off.
+	if screen_id == IDs.ControlType.TOGGLE_MINIMAP:
+		var minimap = get_node_or_null("HUD/Minimap")
+		if minimap != null and minimap.has_method("set_enabled"):
+			minimap.set_enabled(not minimap.is_enabled())
 		return
 	# Simple read-only advisor/info screens opened programmatically.
 	if _extra_screens.has(screen_id):

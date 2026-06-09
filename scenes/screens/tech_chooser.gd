@@ -57,9 +57,27 @@ func rebuild() -> void:
 	bg.color = Color(0.10, 0.10, 0.13, 1.0)
 	add_child(bg)
 
+	# The Cancel button sits outside the scroll area anchored to the right edge so
+	# it is always reachable regardless of horizontal scroll position.
+	var close_btn: Button = Button.new()
+	close_btn.text = "Cancel"
+	close_btn.anchor_left = 1.0
+	close_btn.anchor_right = 1.0
+	close_btn.anchor_top = 0.0
+	close_btn.anchor_bottom = 0.0
+	close_btn.margin_left = -110
+	close_btn.margin_right = -8
+	close_btn.margin_top = 8
+	close_btn.margin_bottom = 40
+	close_btn.connect("pressed", self, "_on_close")
+	add_child(close_btn)
+
+	# The scroll area covers the whole screen but leaves room on the right for the
+	# Cancel button (margin_right keeps the columns from sliding under it).
 	var scroll: ScrollContainer = ScrollContainer.new()
 	scroll.anchor_right = 1.0
 	scroll.anchor_bottom = 1.0
+	scroll.margin_right = -118
 	add_child(scroll)
 
 	# Eras run left→right as columns; within a column techs stack by prereq tier.
@@ -86,11 +104,6 @@ func rebuild() -> void:
 		var none: Label = Label.new()
 		none.text = "(no technologies defined)"
 		hbox.add_child(none)
-
-	var close_btn: Button = Button.new()
-	close_btn.text = "Cancel"
-	close_btn.connect("pressed", self, "_on_close")
-	hbox.add_child(close_btn)
 
 # One vertical column of tech nodes for an era, sorted by prereq tier then name.
 func _build_era_column(era: String, tech_ids: Array, p) -> VBoxContainer:

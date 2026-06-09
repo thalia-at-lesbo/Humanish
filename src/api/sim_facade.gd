@@ -1788,7 +1788,8 @@ func _cmd_do_control(cmd: Dictionary) -> bool:
 		IDs.ControlType.TOGGLE_SCORE, IDs.ControlType.OPEN_RELIGION, \
 		IDs.ControlType.OPEN_CORPORATION, IDs.ControlType.OPEN_TURN_LOG, \
 		IDs.ControlType.OPEN_DOMESTIC_ADVISOR, \
-		IDs.ControlType.OPEN_VICTORY_PROGRESS, IDs.ControlType.OPEN_OPTIONS:
+		IDs.ControlType.OPEN_VICTORY_PROGRESS, IDs.ControlType.OPEN_OPTIONS, \
+		IDs.ControlType.TOGGLE_MINIMAP:
 			emit_signal("screen_requested", ctrl_type)
 	return true
 

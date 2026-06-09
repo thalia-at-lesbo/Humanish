@@ -146,7 +146,8 @@ enum ControlType {
     # Score display toggle and additional advisor/info screens (§3.1)
     TOGGLE_SCORE = 25, OPEN_RELIGION = 26, OPEN_CORPORATION = 27,
     OPEN_TURN_LOG = 28, OPEN_DOMESTIC_ADVISOR = 29,
-    OPEN_VICTORY_PROGRESS = 30, OPEN_OPTIONS = 31
+    OPEN_VICTORY_PROGRESS = 30, OPEN_OPTIONS = 31,
+    TOGGLE_MINIMAP = 32
 }
 
 # Direct, immediate unit orders (§3.2)

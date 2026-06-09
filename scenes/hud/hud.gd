@@ -35,6 +35,13 @@ func _process(_delta: float) -> void:
 		_rebuild_node("TurnScoreBar")
 		d.clear(IDs.DirtyRegion.DATA_PANES)
 
+	if d.is_dirty(IDs.DirtyRegion.WORLD):
+		# Minimap lives directly under HUD (not under VBox), so use get_node_or_null.
+		var minimap = get_node_or_null("Minimap")
+		if minimap != null and minimap.has_method("refresh"):
+			minimap.refresh()
+		# Note: WORLD dirty flag is cleared by WorldView._process, not here.
+
 func _rebuild_node(name: String) -> void:
 	# The HUD panels live under the VBox container, not directly under the HUD.
 	var node = get_node_or_null("VBox/" + name)

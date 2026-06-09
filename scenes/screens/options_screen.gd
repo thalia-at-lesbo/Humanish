@@ -24,8 +24,17 @@ func _populate(vbox) -> void:
 	score_btn.text = "Toggle Score Display"
 	score_btn.connect("pressed", self, "_on_toggle_score")
 	vbox.add_child(score_btn)
+	var minimap_btn = Button.new()
+	minimap_btn.text = "Toggle Minimap"
+	minimap_btn.connect("pressed", self, "_on_toggle_minimap")
+	vbox.add_child(minimap_btn)
 
 func _on_toggle_score() -> void:
 	var gs = _facade.get_state()
 	_facade.apply_command(Commands.do_control(
 		gs.current_player_id, IDs.ControlType.TOGGLE_SCORE))
+
+func _on_toggle_minimap() -> void:
+	var gs = _facade.get_state()
+	_facade.apply_command(Commands.do_control(
+		gs.current_player_id, IDs.ControlType.TOGGLE_MINIMAP))

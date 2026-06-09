@@ -24,3 +24,27 @@ June 2, 2026, 6:09pm EDT (Currently fixed, do not investigate)
 -- ensure units on the same square are allowed
 -- ensure units on the same square can be toggled between, perhaps with additional clicks on the unit stack
 -- fog of war should not have any transparency
+
+June 8, 19:30 EDT
+(any updates to rules or data or ui can be added provisionally)
+-- New game should show initial player count (currently shows nothing until clicked)
+-- Currently limited to 4 players, however this should be tied to world size (4 minimum)
+-- all advisors should show close button at the bottom (but tech tree show cancel to the right)
+-- overall game option for turning on/off a minimap display (lower right) showing all revealed area)
+-- movement should cancel Fortify state (currently once fortify is selected, unit always shows as fortified)
+-- workers do not show any work action buttons
+-- map should wrap around (ask if clarification is needed)
+-- scroll wheel map zoom should be centered on mouse (right now it appears to zoom diagonally)
+-- when injured, units should have option to either sleep until healed or fortify until healed (if they can normally fortify)
+-- you can't disband the capital, only non-capital cities
+-- if a barbarian attacks the capital with a unit on it, the barbarian appears to get stuck inside the capital?
+-- clicking on something in the production queue should remove it from the queue
+-- scouts should have option to Explore, which periodically picks a random point for the unit to move towards, avoiding attacking, and waking/alerting the user if there is a nearby enemy
+-- right clicking on a square to move a unit should briefly flash the outline of that square to indicate action
+-- barbarian captured the capital city somehow, which caused the fog of war to lift (barbcapture.sav)
+-- city population does not appear to grow, there should already be predefined rules for this
+-- Barbarians show as ?`s Warrior but it should show as Bandit <unit type> or Wild <animal>
+-- Diplomacy advisor does not appear to show a menu, only a close button with map in the background
+-- Event log doesn't show current players unit's dying
+-- permanent alliances should be an optional rule at game creation that is off by default (friendly, defensive pact or fought against a common enemy)
+-- in Debug Mode, need to have a button in Options to turn off fog of war
