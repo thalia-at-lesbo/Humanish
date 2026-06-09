@@ -62,6 +62,19 @@ func test_starvation_cannot_increase_pop() -> void:
 	TurnEngine._settlement_growth(gs, s, gs.get_player(1))
 	assert_true(s.population <= pop_before, "Starvation should reduce or hold population")
 
+func test_consumption_uses_food_per_citizen_constant() -> void:
+	# Sustenance consumed per turn = population * food_per_citizen (data-driven, §4.2),
+	# not a hardcoded 2.
+	var gs = make_gs(1)
+	var s = make_settlement(gs, 1, 2, 2, 2)  # pop 2, dry inland, no food tiles
+	s.worked_tiles = []
+	s.food_store = 10
+	TurnEngine._update_wellbeing(gs, s, gs.get_player(1), gs.db)
+	var fpc: int = gs.db.get_constant("food_per_citizen", 2)
+	var expected: int = 10 + (0 - s.wellbeing_deficit) - (s.population * fpc)
+	TurnEngine._settlement_growth(gs, s, gs.get_player(1))
+	assert_eq(s.food_store, expected, "Consumption is population * food_per_citizen")
+
 # ── Manual citizen management (worked-tile locks) ────────────────────────────
 
 func _has_pair(arr, x, y) -> bool:
