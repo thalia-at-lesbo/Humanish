@@ -1,11 +1,13 @@
 # Plan: Advanced Player AI
 
-> **Status: PHASES A & B COMPLETE** (2026-06-09). Phase A (difficulty handicap)
-> landed on `feat/phase-a-ai-handicap`; Phase B (competent brain) landed on
-> `feat/phase-b-ai-brain` — both merged to `main`. Phases C–D not yet started.
-> Supersedes nothing — builds on the existing `PlayerAI` (`src/api/player_ai.gd`),
-> which stays a pure static `SimFacade` *client* throughout. This document is the
-> design record and the step list; the live code is authoritative once work begins.
+> **Status: PHASES A, B & C COMPLETE** (2026-06-09). Phase A (difficulty
+> handicap) landed on `feat/phase-a-ai-handicap`; Phase B (competent brain) on
+> `feat/phase-b-ai-brain`; Phase C (trait-driven focus) on
+> `feat/phase-c-ai-focus` — all merged to `main`. Phase D (tuning/docs/hardening)
+> not yet started. Supersedes nothing — builds on the existing `PlayerAI`
+> (`src/api/player_ai.gd`), which stays a pure static `SimFacade` *client*
+> throughout. This document is the design record and the step list; the live code
+> is authoritative once work begins.
 
 ## Context
 
@@ -214,13 +216,35 @@ same at every difficulty. Phase A's handicap now scales a strategy worth scaling
 
 ---
 
-## Phase C — Trait-driven strategic focus
+## Phase C — Trait-driven strategic focus ✓ COMPLETE
 
 Layers leader personality on top of the one brain as **soft bias, never gates**.
 A peaceful leader still defends and expands a little; traits only tilt emphasis
 above a baseline floor. Fully data-driven: a new trait adds a JSON block, no code.
 
-### C1. Add `ai_focus` weights to trait data
+> **Landed 2026-06-09** on `feat/phase-c-ai-focus`. Each of the 11 traits carries
+> an `ai_focus` block over four axes (`expand`/`military`/`economy`/`science`) in
+> `leaders_traits.json`; `PlayerAI._focus_profile(player, db)` sums them per turn
+> (pure integer, no RNG, all-zero for a traitless leader so every site collapses
+> to its Phase-B baseline). Five decision sites read the profile as soft bias
+> *below* the Phase-B floors: production order (`_sorted_options` keys role →
+> focus → cost, with `_unit_axis`/`_structure_axis` classifying each buildable),
+> the finance/research slider tilt (`manage_economy`), the city-count target
+> (`_city_target`), the garrison floor (`_defender_target`), and the attack margin
+> (`_attack_margin`). New scaling constants live in `data/constants.json`
+> (`ai_focus_city_per_expand`, `ai_focus_defenders_divisor`,
+> `ai_focus_margin_per_military`, `ai_focus_finance_per_economy`,
+> `ai_focus_finance_cap`).
+>
+> **Gates:** the full unit suite + `tests/integration` playthrough are green; the
+> all-AI `ai_full_game_smoke.gd` wins with exit 0 / zero errors across seeds
+> 42/99/7 (each playing the full 500 turns). A fast CI regression
+> (`test_contrasting_leaders_play_rounded_game`, ~1.4 s) pits a peaceful science
+> leader against a militaristic expansionist and confirms the "soft bias, not
+> gates" guarantee — neither self-destructs, and even the peaceful leader still
+> founds a city and keeps a garrison.
+
+### C1. Add `ai_focus` weights to trait data ✓ DONE
 - **Goal:** Each of the 11 traits carries an `ai_focus` weight block over four
   axes: `expand`, `military`, `economy`, `science` (integers, e.g. 0–3).
 - **Changes:** Add `ai_focus` to each entry in `leaders_traits.json` (proposed
@@ -232,7 +256,7 @@ above a baseline floor. Fully data-driven: a new trait adds a JSON block, no cod
   schema/key sanity.
 - **Complexity: Low** (pure data + a load assertion).
 
-### C2. Sum a leader's focus profile
+### C2. Sum a leader's focus profile ✓ DONE
 - **Goal:** Derive a per-player `{expand, military, economy, science}` profile by
   summing `ai_focus` across `player.traits`.
 - **Changes:** A pure helper `PlayerAI._focus_profile(player, db)` (integer sums,
@@ -243,7 +267,7 @@ above a baseline floor. Fully data-driven: a new trait adds a JSON block, no cod
   matches its one block.
 - **Complexity: Low.**
 
-### C3. Bias production order by focus
+### C3. Bias production order by focus ✓ DONE
 - **Goal:** Within the B3 role-ranked list, nudge the dominant axis's items
   earlier (financial → markets before barracks; aggressive → the reverse).
 - **Changes:** Add a focus-weighted term to the B3 comparator, *below* the safety
@@ -253,7 +277,7 @@ above a baseline floor. Fully data-driven: a new trait adds a JSON block, no cod
   defender floor.
 - **Complexity: Low–Medium.**
 
-### C4. Bias sliders, expansion target, and military floor by focus
+### C4. Bias sliders, expansion target, and military floor by focus ✓ DONE
 - **Goal:** `economy` vs `science` weight tilts the finance/research/culture
   split (honoring policy step/floor as `manage_economy` already does); `expand`
   scales the B2 city-count target; `military` scales the B4 defender floor and
@@ -266,14 +290,18 @@ above a baseline floor. Fully data-driven: a new trait adds a JSON block, no cod
   bounds.
 - **Complexity: Medium.**
 
-### C5. Personality regression gate
+### C5. Personality regression gate ✓ DONE
 - **Goal:** Confirm distinct leaders play measurably differently and none
   self-destructs (the "soft bias not gates" guarantee).
 - **Changes:** none beyond test.
-- **Test:** an all-AI smoke variant (or extend `ai_full_game_smoke.gd`) with
-  contrasting leaders; assert all survive past an early turn count and the
-  game still reaches a win. Spot-check that a peaceful leader still keeps ≥1
-  garrison and founds ≥1 extra city.
+- **Test:** `tests/api/test_player_ai.gd::test_contrasting_leaders_play_rounded_game`
+  drives a fast all-AI opening (Gandhi science vs. Genghis military/expand, fixed
+  16 turns, ~1.4 s) and asserts neither self-destructs and even the peaceful
+  leader founds a city and keeps a garrison. The *full* all-AI win gate stays the
+  manual `ai_full_game_smoke.gd`, which already pits distinct societies and was
+  re-run green (seeds 42/99/7) under the focus layer. The measurable-difference
+  guarantee is covered by the C2–C4 unit tests (distinct profiles → distinct
+  production order, sliders, city target, garrison floor, attack margin).
 - **Complexity: Low–Medium.**
 
 **Phase C exit:** same difficulty feels different per leader; equally hard,
