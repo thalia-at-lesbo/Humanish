@@ -103,3 +103,21 @@ func test_starting_units_default_to_warrior_without_hunting() -> void:
 		["settler", "warrior"], "No Hunting → settler + warrior")
 	assert_eq(db.starting_units_for_techs(["fishing", "hunting"]),
 		["settler", "scout"], "Hunting → settler + scout")
+
+# ── Trait AI focus (§C1) ───────────────────────────────────────────────────────
+
+# Every trait must carry an `ai_focus` block over the four strategic axes, all
+# integers, so PlayerAI._focus_profile can sum a leader's direction without a
+# missing-key guard. (Phase C — trait-driven strategic focus.)
+func test_every_trait_has_ai_focus() -> void:
+	var db = _db()
+	var traits: Dictionary = db.leaders_traits.get("traits", {})
+	assert_false(traits.empty(), "Traits table must be present")
+	var axes := ["expand", "military", "economy", "science"]
+	for tid in traits:
+		var focus = traits[tid].get("ai_focus", null)
+		assert_true(focus is Dictionary, "Trait '%s' must declare an ai_focus dict" % tid)
+		for axis in axes:
+			assert_true(focus.has(axis), "Trait '%s' ai_focus needs a '%s' axis" % [tid, axis])
+			assert_true(typeof(focus[axis]) == TYPE_REAL or typeof(focus[axis]) == TYPE_INT,
+				"Trait '%s' ai_focus.%s must be numeric" % [tid, axis])

@@ -453,3 +453,208 @@ func test_holds_against_strong_adjacent_enemy() -> void:
 	assert_not_null(a, "The attacker is intact")
 	assert_false(a.has_attacked, "Without a clear power edge the unit holds")
 	assert_not_null(gs.get_unit(strong.id), "The strong enemy is left alone")
+
+# ── §C2 Focus profile ──────────────────────────────────────────────────────────
+
+func test_focus_profile_sums_two_traits() -> void:
+	# Washington = expansive (expand 2, economy 1) + charismatic (expand 1,
+	# military 1) → an expand-heavy profile.
+	var gs = make_gs(1)
+	var p = gs.get_player(1)
+	p.traits = ["expansive", "charismatic"]
+	var prof = PlayerAI._focus_profile(p, gs.db)
+	assert_eq(int(prof["expand"]), 3, "expand sums across both traits")
+	assert_eq(int(prof["military"]), 1, "military comes from charismatic")
+	assert_eq(int(prof["economy"]), 1, "economy comes from expansive")
+	assert_eq(int(prof["science"]), 0, "neither trait is science")
+	# Expand is the strictly dominant axis.
+	for axis in ["military", "economy", "science"]:
+		assert_true(int(prof["expand"]) > int(prof[axis]),
+			"Washington leans expansionist over " + axis)
+
+func test_focus_profile_single_trait_matches_block() -> void:
+	var gs = make_gs(1)
+	var p = gs.get_player(1)
+	p.traits = ["financial"]
+	var prof = PlayerAI._focus_profile(p, gs.db)
+	var block: Dictionary = gs.db.get_trait("financial").get("ai_focus", {})
+	for axis in ["expand", "military", "economy", "science"]:
+		assert_eq(int(prof[axis]), int(block.get(axis, 0)),
+			"A single-trait profile equals that trait's ai_focus on " + axis)
+
+func test_focus_profile_traitless_is_zero() -> void:
+	var gs = make_gs(1)
+	var p = gs.get_player(1)
+	p.traits = []
+	var prof = PlayerAI._focus_profile(p, gs.db)
+	for axis in ["expand", "military", "economy", "science"]:
+		assert_eq(int(prof[axis]), 0,
+			"A traitless leader has a flat (Phase-B baseline) profile on " + axis)
+
+# ── §C3 Production order biased by focus ───────────────────────────────────────
+
+# The first economy structure a defended city queues: index of the leading
+# `structure` option (role ECONOMY) in the focus-ordered plan.
+func _first_structure_axis(gs, s, p) -> String:
+	for opt in PlayerAI._sorted_options(gs, s, p):
+		if str(opt["type"]) == "structure":
+			return PlayerAI._structure_axis(gs.db.get_structure(str(opt["id"])))
+	return ""
+
+func test_production_order_differs_by_focus() -> void:
+	# Same defended city; a science leader leads its structures with a research
+	# building, a military leader with a defensive/training one. Give every tech so
+	# the full structure menu is on the table for both.
+	var gs = make_gs(2)
+	gs.current_player_id = 1
+	var sci = gs.get_player(1)
+	var mil = gs.get_player(2)
+	for tech_id in gs.db.technologies:
+		sci.technologies.append(tech_id)
+		mil.technologies.append(tech_id)
+	sci.traits = ["philosophical"]   # science 3
+	mil.traits = ["aggressive"]      # military 3
+	var ss = make_settlement(gs, 1, 5, 5)
+	make_warrior(gs, 1, 5, 5)        # meets the defender floor → economy role leads
+	var ms = make_settlement(gs, 2, 15, 15)
+	make_warrior(gs, 2, 15, 15)
+
+	assert_eq(_first_structure_axis(gs, ss, sci), "science",
+		"A philosophical leader fronts its build list with a science building")
+	assert_eq(_first_structure_axis(gs, ms, mil), "military",
+		"An aggressive leader fronts its build list with a military building")
+
+func test_focus_bias_respects_defender_floor() -> void:
+	# Even a science-heavy leader still queues the garrison defender first in an
+	# undefended city — focus sits below the role floor.
+	var gs = make_gs(1)
+	gs.current_player_id = 1
+	var p = gs.get_player(1)
+	p.traits = ["philosophical"]
+	var s = make_settlement(gs, 1, 5, 5)   # undefended
+	var opts = PlayerAI._sorted_options(gs, s, p)
+	assert_eq(int(opts[0]["role"]), PlayerAI.ROLE_DEFENDER,
+		"The defender floor outranks personality focus")
+	assert_eq(str(opts[0]["type"]), "unit", "The first item is the garrison unit")
+
+# ── §C4 Sliders / target / floor / margin biased by focus ──────────────────────
+
+func test_science_leader_runs_higher_research_than_economy_leader() -> void:
+	# Both solvent. The economy leader runs a standing finance share; the science
+	# leader stays at full research. Compare the resulting research sliders.
+	var gs = make_gs(2)
+	var f = ai_facade(gs)
+	gs.current_player_id = 1
+	var eco = gs.get_player(1)
+	eco.traits = ["financial"]     # economy 3
+	eco.treasury = 1000
+	PlayerAI.manage_economy(f, 1)
+
+	gs.current_player_id = 2
+	var sci = gs.get_player(2)
+	sci.traits = ["philosophical"] # science 3
+	sci.treasury = 1000
+	PlayerAI.manage_economy(f, 2)
+
+	assert_true(sci.slider_research > eco.slider_research,
+		"A science leader runs a higher research slider than an economy leader")
+	assert_eq(sci.slider_research, 100, "A science leader pours everything into research")
+	assert_true(eco.slider_finance > 0, "An economy leader keeps a standing finance share")
+	assert_eq(eco.get_slider_sum(), 100, "Sliders still sum to 100")
+
+func test_expand_focus_raises_city_target() -> void:
+	var gs = make_gs(1)
+	var p = gs.get_player(1)
+	var base: int = gs.db.get_constant("ai_city_target", 6)
+	p.traits = []
+	assert_eq(PlayerAI._city_target(p, gs.db), base, "A traitless leader holds the base target")
+	p.traits = ["imperialistic"]   # expand 3
+	assert_true(PlayerAI._city_target(p, gs.db) > base,
+		"An expansionist leader targets more cities than the baseline")
+
+func test_military_focus_raises_defender_floor() -> void:
+	var gs = make_gs(2)
+	var sa = make_settlement(gs, 1, 5, 5)
+	var sb = make_settlement(gs, 2, 15, 15)
+	gs.get_player(1).traits = []                # baseline
+	gs.get_player(2).traits = ["aggressive"]    # military 3
+	var base: int = PlayerAI._defender_target(gs, sa, 1)
+	assert_eq(base, gs.db.get_constant("ai_min_defenders", 1),
+		"A peaceful leader holds the base garrison floor")
+	assert_true(PlayerAI._defender_target(gs, sb, 2) > base,
+		"A military leader holds a higher garrison floor")
+
+func test_military_focus_lowers_attack_margin() -> void:
+	var gs = make_gs(2)
+	var peaceful = gs.get_player(1)
+	peaceful.traits = []
+	var warlike = gs.get_player(2)
+	warlike.traits = ["aggressive"]   # military 3
+	var base: int = gs.db.get_constant("ai_attack_margin", 20)
+	assert_eq(PlayerAI._attack_margin(peaceful, gs.db), base,
+		"A peaceful leader needs the full power edge to attack")
+	assert_true(PlayerAI._attack_margin(warlike, gs.db) < base,
+		"A military leader attacks on a slimmer power edge")
+	assert_true(PlayerAI._attack_margin(warlike, gs.db) >= 0,
+		"The attack margin never goes negative")
+
+# ── §C5 Personality regression gate ────────────────────────────────────────────
+
+func _owned_cities(gs, pid: int) -> int:
+	var n: int = 0
+	for s in gs.settlements:
+		if s.owner_player_id == pid:
+			n += 1
+	return n
+
+func _has_garrison(gs, pid: int) -> bool:
+	for s in gs.settlements:
+		if s.owner_player_id != pid:
+			continue
+		for u in gs.units:
+			if u.owner_player_id == pid and u.x == s.x and u.y == s.y \
+					and PlayerAI._is_military_unit(gs.db.get_unit(u.unit_type_id)):
+				return true
+	return false
+
+# Two contrasting leaders — a peaceful science empire and a militaristic
+# expansionist — play side by side for an opening stretch. The "soft bias, not
+# gates" guarantee: neither self-destructs, and even the peaceful leader still
+# founds a city and keeps a garrison (focus tilts emphasis above the Phase-B
+# floor; it never zeroes a role). The *full* all-AI win gate is the manual
+# `tests/manual/ai_full_game_smoke.gd`, which already pits distinct societies —
+# this fast CI test only guards the personality spot-checks.
+const PERSONALITY_TURNS: int = 16
+
+func test_contrasting_leaders_play_rounded_game() -> void:
+	var players = [
+		{"name": "Gandhi", "leader_id": "gandhi", "traits": ["philosophical", "spiritual"],
+			"starting_gold": 100, "starting_units": ["settler", "warrior"], "is_ai": true},
+		{"name": "Genghis", "leader_id": "genghis_khan", "traits": ["aggressive", "imperialistic"],
+			"starting_gold": 100, "starting_units": ["settler", "warrior"], "is_ai": true},
+	]
+	var f = setup_facade(20260609, "small", players, ["last_standing", "time"], "warlord")
+
+	var peak_cities := {1: 0, 2: 0}
+	var ever_garrison := {1: false, 2: false}
+	var first_elim := {1: -1, 2: -1}
+	var gs = f.get_state()
+	while gs.winning_alliance_id < 0 and gs.turn_number < PERSONALITY_TURNS:
+		for pid in [1, 2]:
+			if gs.get_player(pid).is_eliminated and first_elim[pid] < 0:
+				first_elim[pid] = gs.turn_number
+			peak_cities[pid] = max(peak_cities[pid], _owned_cities(gs, pid))
+			if _has_garrison(gs, pid):
+				ever_garrison[pid] = true
+		PlayerAI.take_turn(f, gs.current_player_id)
+		gs = f.get_state()
+
+	# Nobody self-destructs in the opening — any elimination is a real conquest.
+	for pid in [1, 2]:
+		assert_true(int(first_elim[pid]) < 0 or int(first_elim[pid]) >= 5,
+			"Player %d survives past the opening (no early self-destruct)" % pid)
+	# Both leaders settle; even the peaceful (science) leader founds and garrisons.
+	assert_true(int(peak_cities[1]) >= 1, "A peaceful (science) leader founds a city")
+	assert_true(int(peak_cities[2]) >= 1, "A militaristic leader founds a city")
+	assert_true(bool(ever_garrison[1]),
+		"Even a peaceful leader keeps at least one garrison (soft bias, not a gate)")

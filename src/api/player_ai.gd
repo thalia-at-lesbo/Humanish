@@ -71,8 +71,22 @@ static func manage_economy(facade, player_id: int) -> void:
 		min_research = max(min_research, int(pol.get("slider_min_research", 0)))
 	var step: int = increment if increment > 0 else 10
 
-	# Finance share: a solvency reserve when gold is low, otherwise nothing.
-	var finance: int = 50 if player.treasury < SOLVENCY_TREASURY else 0
+	# Personality tilt (§C4): an economy-leaning leader runs a standing finance
+	# share (more gold, less research); a science-leaning leader pushes the other
+	# way and stays at full research. A traitless leader nets zero, preserving the
+	# Phase-B research-everything default.
+	var db = gs.db
+	var profile: Dictionary = _focus_profile(player, db)
+	var tilt: int = (int(profile["economy"]) - int(profile["science"])) \
+		* db.get_constant("ai_focus_finance_per_economy", 10)
+	var cap: int = db.get_constant("ai_focus_finance_cap", 50)
+	var focus_finance: int = tilt if tilt > 0 else 0
+	focus_finance = focus_finance if focus_finance < cap else cap
+
+	# Finance share: the larger of the personality tilt and a solvency reserve when
+	# gold is low.
+	var solvency: int = 50 if player.treasury < SOLVENCY_TREASURY else 0
+	var finance: int = focus_finance if focus_finance > solvency else solvency
 	finance = (finance / step) * step
 	var research: int = 100 - finance
 	# Honour the research floor by trimming finance if it would dip below it.
@@ -212,6 +226,11 @@ static func _sorted_options(gs, s, player) -> Array:
 	var needs_defender: bool = _city_defender_count(gs, s, player.id) < _defender_target(gs, s, player.id)
 	var wants_settler: bool = _wants_settler(gs, player)
 	var wants_worker: bool = _wants_worker(gs, player)
+	# Leader personality (§C3): within a role, items on the leader's stronger axes
+	# sort earlier — a soft bias, applied *below* the role floors so the defender
+	# floor still wins. A traitless leader has an all-zero profile, leaving the
+	# Phase-B cheapest-first order untouched.
+	var profile: Dictionary = _focus_profile(player, db)
 	var opts: Array = []
 	for uid in db.units:
 		var u: Dictionary = db.units[uid]
@@ -231,6 +250,7 @@ static func _sorted_options(gs, s, player) -> Array:
 			continue
 		var item_u: Dictionary = {"type": "unit", "id": uid}
 		opts.append({"type": "unit", "id": uid, "role": _unit_role(u, needs_defender),
+			"focus": int(profile.get(_unit_axis(u), 0)),
 			"cost": TurnEngine._item_cost(item_u, db, player, pace)})
 	for sid in db.structures:
 		if s.has_structure(sid):
@@ -240,6 +260,7 @@ static func _sorted_options(gs, s, player) -> Array:
 			continue
 		var item_s: Dictionary = {"type": "structure", "id": sid}
 		opts.append({"type": "structure", "id": sid, "role": ROLE_ECONOMY,
+			"focus": int(profile.get(_structure_axis(st), 0)),
 			"cost": TurnEngine._item_cost(item_s, db, player, pace)})
 	# Selection sort: Godot 3 cannot stably sort arrays of dictionaries via sort(),
 	# and a custom comparator over (role, cost, type, id) keeps the order determined.
@@ -266,16 +287,56 @@ static func _unit_role(u: Dictionary, needs_defender: bool) -> int:
 		return ROLE_EXPANSION
 	return ROLE_FALLBACK
 
-# True if option `a` should be built before `b`: lower role first, then cheaper,
-# ties broken by type then id so the ordering is fully determined.
+# True if option `a` should be built before `b`: lower role first; then, within a
+# role, the leader's stronger focus axis first (§C3 personality bias); then
+# cheaper, ties broken by type then id so the ordering is fully determined. Focus
+# sits *below* role so a role floor (e.g. the defender slot) always outranks it.
 static func _option_better(a: Dictionary, b: Dictionary) -> bool:
 	if int(a.get("role", ROLE_FALLBACK)) != int(b.get("role", ROLE_FALLBACK)):
 		return int(a.get("role", ROLE_FALLBACK)) < int(b.get("role", ROLE_FALLBACK))
+	if int(a.get("focus", 0)) != int(b.get("focus", 0)):
+		return int(a.get("focus", 0)) > int(b.get("focus", 0))
 	if int(a["cost"]) != int(b["cost"]):
 		return int(a["cost"]) < int(b["cost"])
 	if str(a["type"]) != str(b["type"]):
 		return str(a["type"]) < str(b["type"])
 	return str(a["id"]) < str(b["id"])
+
+# ── §C3 Option focus axis (data-driven) ────────────────────────────────────────
+#
+# Map a buildable to the strategic axis a focus profile weights it on, so the §C3
+# comparator can nudge a leader's dominant axis earlier within a role.
+
+# Structure effect keys that mark a building as military-flavoured even without an
+# explicit defence bonus (barracks → land_xp, stable → mounted_xp, …).
+const MILITARY_EFFECT_KEYS: Array = ["city_defense", "military_production_city",
+	"heals_units", "free_promotion", "free_promotion_all", "block_barbarians",
+	"great_general_rate"]
+
+# A unit's axis: military units bias `military`, settlers `expand`, workers
+# `economy`; anything else has no axis ("" → zero weight).
+static func _unit_axis(u: Dictionary) -> String:
+	if _is_military_unit(u):
+		return "military"
+	if bool(u.get("can_found", false)):
+		return "expand"
+	if _is_worker_unit(u):
+		return "economy"
+	return ""
+
+# A structure's axis from its data bonuses/effects: a research building biases
+# `science`, a defensive or military-training building `military`, and every other
+# growth/commerce/infrastructure building `economy` (the broad default).
+static func _structure_axis(st: Dictionary) -> String:
+	if int(st.get("science_bonus", 0)) > 0:
+		return "science"
+	if int(st.get("defence_bonus", 0)) > 0 or int(st.get("cultural_defence_bonus", 0)) > 0:
+		return "military"
+	var effects: Dictionary = st.get("effects", {})
+	for k in effects:
+		if str(k).ends_with("_xp") or str(k) in MILITARY_EFFECT_KEYS:
+			return "military"
+	return "economy"
 
 # ── Units: a flat, deterministic playbook (§B1–B6) ─────────────────────────────
 #
@@ -444,10 +505,15 @@ static func _nearest_settlement_distance(gs, x: int, y: int) -> int:
 # exists near one of its cities (or it has no city yet). Drives both settler
 # production (§B3) and whether a settler bothers to look for a site.
 static func _wants_settler(gs, player) -> bool:
-	var target: int = gs.db.get_constant("ai_city_target", 6)
-	if _owned_city_count(gs, player.id) >= target:
+	if _owned_city_count(gs, player.id) >= _city_target(player, gs.db):
 		return false
 	return _open_site_exists(gs, player)
+
+# The empire's city-count target: the base, plus the leader's `expand` focus (§C4)
+# so an expansionist settles wider while a homebody stops at the baseline.
+static func _city_target(player, db) -> int:
+	return db.get_constant("ai_city_target", 6) \
+		+ int(_focus_profile(player, db)["expand"]) * db.get_constant("ai_focus_city_per_expand", 1)
 
 # A worker is wanted while the empire has fewer workers than cities.
 static func _wants_worker(gs, player) -> bool:
@@ -548,9 +614,15 @@ static func _nearest_unassigned(gs, military: Array, assigned: Dictionary, s) ->
 			best_d = d
 	return best
 
-# A city's defender target: the base floor, +1 while a hostile stack is near (§B5).
+# A city's defender target: the base floor, raised by the leader's `military`
+# focus (§C4), and +1 more while a hostile stack is near (§B5). A peaceful leader
+# keeps the baseline floor — focus only ever adds, never gates below it.
 static func _defender_target(gs, s, player_id: int) -> int:
 	var target: int = gs.db.get_constant("ai_min_defenders", 1)
+	var p = gs.get_player(player_id)
+	var divisor: int = gs.db.get_constant("ai_focus_defenders_divisor", 3)
+	if p != null and divisor > 0:
+		target += int(_focus_profile(p, gs.db)["military"]) / divisor
 	if _threats_near(gs, s, player_id):
 		target += 1
 	return target
@@ -595,7 +667,8 @@ static func _manage_free_military(facade, gs, u, player_id: int) -> void:
 # the map's deterministic order and returns the first qualifying tile.
 static func _adjacent_attack_target(gs, u, player_id: int):
 	var db = gs.db
-	var margin: int = db.get_constant("ai_attack_margin", 20)
+	var p = gs.get_player(player_id)
+	var margin: int = _attack_margin(p, db) if p != null else db.get_constant("ai_attack_margin", 20)
 	var atk_power: int = _attack_power(u, db)
 	for t in gs.map.neighbours8(u.x, u.y):
 		var s = gs.get_settlement_at(t.x, t.y)
@@ -612,6 +685,14 @@ static func _adjacent_attack_target(gs, u, player_id: int):
 			# Undefended hostile city: safe to assault.
 			return {"x": t.x, "y": t.y}
 	return null
+
+# The power edge an attack needs, lowered by the leader's `military` focus (§C4):
+# an aggressive leader strikes on a slimmer margin, a peaceful one needs a clearer
+# advantage. Floored at zero so it never demands a negative edge.
+static func _attack_margin(player, db) -> int:
+	var margin: int = db.get_constant("ai_attack_margin", 20) \
+		- int(_focus_profile(player, db)["military"]) * db.get_constant("ai_focus_margin_per_military", 5)
+	return margin if margin > 0 else 0
 
 # The nearest *non-adjacent* hostile unit within twice the threat radius, or null.
 # Lets a free unit advance toward the front instead of milling at home. Adjacent
@@ -727,6 +808,28 @@ static func _sort_by_id(arr: Array) -> void:
 			var tmp = arr[i]
 			arr[i] = arr[best]
 			arr[best] = tmp
+
+# ── §C2 Trait-driven strategic focus ───────────────────────────────────────────
+#
+# A leader's personality is a soft bias layered on the one competent brain: it
+# only tilts emphasis above a baseline floor, never gates a behaviour. The focus
+# profile sums each trait's `ai_focus` block (data, §C1) over four axes; the
+# Phase-C decision sites (production order, sliders, city target, defender floor,
+# attack appetite) read it as `base + k·axis`, so a peaceful leader still defends
+# and expands a little. Pure integer sums, no RNG — recomputed per turn (trivial).
+
+const FOCUS_AXES: Array = ["expand", "military", "economy", "science"]
+
+# Sum `ai_focus` across the player's traits into {expand, military, economy,
+# science}. A traitless player (or unknown trait) yields all-zero, which makes
+# every Phase-C `base + k·axis` collapse to its Phase-B baseline.
+static func _focus_profile(player, db) -> Dictionary:
+	var profile: Dictionary = {"expand": 0, "military": 0, "economy": 0, "science": 0}
+	for tid in player.traits:
+		var focus: Dictionary = db.get_trait(str(tid)).get("ai_focus", {})
+		for axis in FOCUS_AXES:
+			profile[axis] += int(focus.get(axis, 0))
+	return profile
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 

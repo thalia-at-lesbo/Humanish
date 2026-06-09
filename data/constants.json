@@ -151,5 +151,10 @@
   "ai_site_distance_penalty": 2,
   "ai_site_yield_food_weight": 2,
   "ai_site_yield_production_weight": 2,
-  "ai_site_yield_commerce_weight": 1
+  "ai_site_yield_commerce_weight": 1,
+  "ai_focus_city_per_expand": 1,
+  "ai_focus_defenders_divisor": 3,
+  "ai_focus_margin_per_military": 5,
+  "ai_focus_finance_per_economy": 10,
+  "ai_focus_finance_cap": 50
 }

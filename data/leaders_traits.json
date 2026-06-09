@@ -1,16 +1,16 @@
 {
   "traits": {
-    "aggressive":    { "id": "aggressive",    "name": "Aggressive",    "free_promotions": ["combat1"], "free_structures": ["barracks", "drydock"] },
-    "charismatic":   { "id": "charismatic",   "name": "Charismatic",   "happiness_bonus": 1, "xp_bonus": 25, "promotion_cost_reduction": 25 },
-    "creative":      { "id": "creative",      "name": "Creative",      "culture_per_city": 2, "free_structures": ["library", "theatre", "colosseum"] },
-    "expansive":     { "id": "expansive",     "name": "Expansive",     "health_bonus": 2, "free_structures": ["granary", "harbor"] },
-    "financial":     { "id": "financial",     "name": "Financial",     "commerce_bonus": 1, "commerce_bonus_threshold": 2 },
-    "imperialistic": { "id": "imperialistic", "name": "Imperialistic", "great_general_rate_bonus": 50, "settler_cost_reduction": 50 },
-    "industrious":   { "id": "industrious",   "name": "Industrious",   "wonder_production_bonus": 50, "free_structures": ["forge"] },
-    "organized":     { "id": "organized",     "name": "Organized",     "civic_upkeep_reduction": 50, "free_structures": ["courthouse", "lighthouse"] },
-    "philosophical": { "id": "philosophical", "name": "Philosophical", "great_person_rate_bonus": 100 },
-    "protective":    { "id": "protective",    "name": "Protective",    "free_promotions": ["drill1", "city_garrison1"], "free_structures": ["walls", "castle"] },
-    "spiritual":     { "id": "spiritual",     "name": "Spiritual",     "no_anarchy": true }
+    "aggressive":    { "id": "aggressive",    "name": "Aggressive",    "free_promotions": ["combat1"], "free_structures": ["barracks", "drydock"], "ai_focus": { "expand": 0, "military": 3, "economy": 0, "science": 0 } },
+    "charismatic":   { "id": "charismatic",   "name": "Charismatic",   "happiness_bonus": 1, "xp_bonus": 25, "promotion_cost_reduction": 25, "ai_focus": { "expand": 1, "military": 1, "economy": 0, "science": 0 } },
+    "creative":      { "id": "creative",      "name": "Creative",      "culture_per_city": 2, "free_structures": ["library", "theatre", "colosseum"], "ai_focus": { "expand": 0, "military": 0, "economy": 0, "science": 2 } },
+    "expansive":     { "id": "expansive",     "name": "Expansive",     "health_bonus": 2, "free_structures": ["granary", "harbor"], "ai_focus": { "expand": 2, "military": 0, "economy": 1, "science": 0 } },
+    "financial":     { "id": "financial",     "name": "Financial",     "commerce_bonus": 1, "commerce_bonus_threshold": 2, "ai_focus": { "expand": 0, "military": 0, "economy": 3, "science": 0 } },
+    "imperialistic": { "id": "imperialistic", "name": "Imperialistic", "great_general_rate_bonus": 50, "settler_cost_reduction": 50, "ai_focus": { "expand": 3, "military": 0, "economy": 0, "science": 0 } },
+    "industrious":   { "id": "industrious",   "name": "Industrious",   "wonder_production_bonus": 50, "free_structures": ["forge"], "ai_focus": { "expand": 0, "military": 0, "economy": 2, "science": 0 } },
+    "organized":     { "id": "organized",     "name": "Organized",     "civic_upkeep_reduction": 50, "free_structures": ["courthouse", "lighthouse"], "ai_focus": { "expand": 0, "military": 0, "economy": 2, "science": 0 } },
+    "philosophical": { "id": "philosophical", "name": "Philosophical", "great_person_rate_bonus": 100, "ai_focus": { "expand": 0, "military": 0, "economy": 0, "science": 3 } },
+    "protective":    { "id": "protective",    "name": "Protective",    "free_promotions": ["drill1", "city_garrison1"], "free_structures": ["walls", "castle"], "ai_focus": { "expand": 0, "military": 2, "economy": 0, "science": 0 } },
+    "spiritual":     { "id": "spiritual",     "name": "Spiritual",     "no_anarchy": true, "ai_focus": { "expand": 0, "military": 0, "economy": 0, "science": 2 } }
   },
 
   "leaders": {
