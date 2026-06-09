@@ -37,7 +37,7 @@ sections:
   "§6  Economy & research":    "Treasury, sliders, research graph, policies, specialists & Great People, draft (§6.6 provisional), trade routes (§6.7 provisional)"
   "§7  Diplomacy & war":       "Alliances, trades, subordination, espionage (§7.1 provisional), world assemblies (§7.2 provisional)"
   "§8  Beliefs & orgs":        "Religion founding/spread, state religion (§8.1 provisional), missionary spread (§8.2 provisional)"
-  "§9  Wild forces & events":  "Wild spawning, wild-AI behaviour (§9.1 provisional), exploration rewards, scripted events"
+  "§9  Wild forces & events":  "Wild spawning (§9.2 provisional), wild-AI behaviour (§9.1 provisional), exploration rewards, scripted events"
   "§10 Win conditions":        "Last standing, dominance, endgame project, cultural, diplomatic, time"
   "§11 Environmental":         "Pollution accumulation, flooding, tile degradation"
   "§12 Configurable data":     "Data-driven constants — what lives in JSON, not in code"
@@ -56,6 +56,7 @@ provisional_sections:
   - "§8.1  State religion"
   - "§8.2  Missionary spread"
   - "§9.1  Wild-forces behaviour — all radii and cooldowns placeholder"
+  - "§9.2  Wild-forces spawning — BtS-derived port, per-difficulty tables provisional"
 editorial_rule: >
   Modify only with explicit user consent. This is the upstream source of truth;
   the engine grows toward it. When a gap is closed, update the relevant section to
@@ -917,7 +918,9 @@ Beyond the passive turn-by-turn spread (§8), a player may spread a religion del
   **Raider forces** spawn in unexplored or unclaimed areas with increasing frequency and can
   establish their own settlements; an optional setting increases their aggression.
   Difficulty grants players a number of "free wins" against these forces (the odds clamp in
-  combat resolution).
+  combat resolution). The spawning model — turn/era/city gates and the per-area density
+  formula that governs *how many* wild units and cities appear — is detailed in §9.2; the
+  behaviour of forces once spawned is §9.1.
 * **Exploration rewards**: investigating a discovery site yields, by weighted random,
   treasury, map knowledge, experience, a unit, a technology, or a hostile ambush.
 * **Events**: periodic scripted/random events with prerequisites, player choices, and
@@ -969,6 +972,63 @@ into the usual `combat_resolved` / `city_razed` signals, exactly as §4.9 cultur
 sighted and do not re-home if the target moves; "nearest camp" ignores distance, so a wave can
 muster far from the sighted player; raiders never upgrade or retreat; and there is no naval or
 air wild presence.
+
+### 9.2 Wild-forces spawning (provisional)
+> **⚠️ Provisional — preliminary, not verified.** This subsection ports Civilization IV: Beyond
+> the Sword's barbarian-generation model (`CvGame::createBarbarianUnits` / `createBarbarianCities`;
+> constants from `CIV4HandicapInfo.xml`) and adapts it to this engine's difficulty/pace tables.
+> The per-difficulty tables in `data/difficulties.json` are transcribed from the reference game
+> and **not yet retuned** for this engine's map sizes or unit roster. All math is integer per the
+> engine invariants, and every roll is drawn from the shared `gs.rng` in pipeline order, so
+> spawning is deterministic and captured by save/load. This describes *how many* forces appear and
+> *where*; §9.1 describes how they then act.
+
+Ambient wild **units** top up toward a target density, gated by three checks evaluated each
+world step (§3 world-step 4, before the wild AI acts):
+
+1. **Turn gate.** Nothing spawns until `wild_creation_turns_elapsed` turns have passed
+   (per-difficulty: Settler 50 → Deity 10). The gate is **scaled by game pace** via the pace's
+   `growth_scale` (Quick 67%, Normal 100%, Epic 150%, Marathon 300%), so a 40-turn gate becomes
+   ~120 turns on Marathon — mirroring BtS's GameSpeed barb-percent scaling.
+2. **Era gate.** Organised wild units appear only once the game's **current era** (the most
+   advanced any living player has reached) clears the per-era `no_wild_units` flag in
+   `data/ages.json`. The starting (Ancient) era carries the flag — BtS's `bNoBarbUnits`, the
+   "quiet animal phase." *This engine has no fauna subsystem yet, so that early window is simply
+   silent rather than populated with wildlife (a known gap).*
+3. **City-density gate.** Wild units hold off until the world has settled in:
+   `civ_cities ≥ (wild_city_ratio_num / wild_city_ratio_den) × living_civs` — BtS's
+   `numCivCities < 1.5 × civsAlive` check (default 3/2).
+
+Once the gates clear, the map is partitioned into **contiguous land areas** (8-connectivity).
+For each area, the target is one wild unit per `unowned_tiles_per_wild_unit` **unowned** tiles
+(Settler 150 → Deity 25; "unowned" = no player culture), and roughly a quarter of the shortfall
+is filled per step:
+
+```
+target = area_unowned_tiles / unowned_tiles_per_wild_unit
+needed = ((target − area_existing_wild_units) / 4) + 1      # only when target − existing > 0
+```
+
+New units are placed on random unowned, unoccupied land tiles kept at least
+`wild_spawn_min_distance` (BtS `MIN_BARBARIAN_STARTING_DISTANCE`) from any civ unit or city, and
+spawn as the **strongest generic land unit** the leading player has unlocked (resources ignored,
+as in §9.1). A global ceiling of `total_unowned / divisor + 1` guards against many small areas
+each contributing their `+1`. (Naval raiders — `unowned_water_tiles_per_wild_unit`, Settler 3000
+→ Deity 1000 — are **tabled but not yet wired**: the wild AI is land-only.)
+
+Wild **cities** (raider camps, §9.1's muster points) spawn on their own, later schedule:
+
+* **Turn gate** `wild_city_creation_turns_elapsed` (Settler 55 → Deity 15), pace-scaled as above.
+* **Per-area density cap**: a camp is allowed only while
+  `area_wild_cities < area_unowned_tiles / unowned_tiles_per_wild_city` (Settler 160 → Deity 80).
+* **Creation roll**: `wild_city_creation_prob` % per eligible area per step (Settler 4 → Deity 8).
+* **Distance rule**: a camp is placed at least `wild_city_min_distance` (default 6) tiles from
+  any civ settlement and any civ cultural tile — BtS's minimum barbarian-city spacing.
+
+**Known gaps / simplifications (to revisit):** the per-difficulty tables are BtS values, untuned
+here; the Ancient-era window is silent for want of a wildlife subsystem; naval/air wild spawning
+is unimplemented; and the "current era" gate uses the most-advanced living player rather than a
+distinct game-era track.
 
 ---
 

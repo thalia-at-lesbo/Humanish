@@ -10,8 +10,133 @@
 
 extends "res://tests/support/sim_fixture.gd"
 
-# Wild forces: per-turn spawning is bounded by a land-based cap so raiders never
-# flood the map over a long game.
+# Wild forces (§9, provisional BtS port). Ambient wild-unit spawning is gated by a
+# pace-scaled turn threshold, the current era, and a city-density check, then tops
+# each contiguous land area up toward a per-difficulty unowned-tile density target.
+# Wild cities (raider camps) have their own later turn gate, a per-area density cap,
+# a creation-probability roll, and a minimum distance from civ culture.
+
+# ── Gate-opening helpers ────────────────────────────────────────────────────────
+
+# Open the three ambient-spawn gates on a fresh make_gs() state: warlord difficulty
+# (unit divisor 80, turn gate 40), a turn past that gate, a classical-era tech so
+# the era gate lifts, and enough civ cities to clear the 1.5x city-density check.
+func _open_unit_gates(gs) -> void:
+	gs.difficulty_id = "warlord"
+	gs.turn_number = 60
+	gs.players[0].technologies.append("alphabet")  # classical → era gate lifts
+	make_settlement(gs, 1, 2, 2)
+	make_settlement(gs, 1, 2, 17)
+	make_settlement(gs, 2, 17, 2)
+
+func _wild_count(gs) -> int:
+	var n = 0
+	for u in gs.units:
+		if u.is_wild:
+			n += 1
+	return n
+
+func _camp_count(gs) -> int:
+	var n = 0
+	for s in gs.settlements:
+		if s.owner_player_id == -2:
+			n += 1
+	return n
+
+# ── Ambient unit spawning ───────────────────────────────────────────────────────
+
+func test_no_wild_units_before_creation_turn_gate() -> void:
+	var gs = make_gs(2, 7)
+	_open_unit_gates(gs)
+	gs.turn_number = 39  # warlord gate is 40
+	WildForces.spawn_turn(gs, gs.rng)
+	assert_eq(_wild_count(gs), 0, "No wild units may spawn before the turn gate")
+
+	gs.turn_number = 40
+	WildForces.spawn_turn(gs, gs.rng)
+	assert_true(_wild_count(gs) > 0, "Wild units spawn once the turn gate is reached")
+
+func test_creation_turn_gate_scales_with_game_pace() -> void:
+	var gs = make_gs(2, 7)
+	_open_unit_gates(gs)
+	gs.pace_id = "marathon"  # 40-turn gate becomes 40 * 300/100 = 120
+	gs.turn_number = 60      # past the normal gate, well short of the marathon one
+	WildForces.spawn_turn(gs, gs.rng)
+	assert_eq(_wild_count(gs), 0, "Marathon stretches the turn gate; turn 60 is too early")
+
+func test_era_gate_suppresses_wild_units_in_starting_era() -> void:
+	var gs = make_gs(2, 7)
+	_open_unit_gates(gs)
+	gs.players[0].technologies = []  # back to ancient → no_wild_units flag applies
+	WildForces.spawn_turn(gs, gs.rng)
+	assert_eq(_wild_count(gs), 0, "Ancient-era no_wild_units flag blocks organised raiders")
+
+	gs.players[0].technologies.append("alphabet")  # classical lifts the flag
+	WildForces.spawn_turn(gs, gs.rng)
+	assert_true(_wild_count(gs) > 0, "Reaching the classical era opens wild-unit spawning")
+
+func test_city_density_gate_holds_until_world_settles() -> void:
+	var gs = make_gs(2, 7)
+	gs.difficulty_id = "warlord"
+	gs.turn_number = 60
+	gs.players[0].technologies.append("alphabet")
+	# Two living civs need >= 3 civ cities (1.5x); start with only two.
+	make_settlement(gs, 1, 2, 2)
+	make_settlement(gs, 2, 17, 2)
+	WildForces.spawn_turn(gs, gs.rng)
+	assert_eq(_wild_count(gs), 0, "Below 1.5x cities-per-civ, wild units stay home")
+
+	make_settlement(gs, 1, 2, 17)  # third city clears the ratio
+	WildForces.spawn_turn(gs, gs.rng)
+	assert_true(_wild_count(gs) > 0, "Once the world fills in, wild units appear")
+
+func test_density_converges_to_unowned_tile_target() -> void:
+	# 20x20 all-land map, warlord divisor 80 → target = unowned/80 = 5; the /4+1
+	# top-up converges there and the global cap (target+1) is never exceeded.
+	var gs = make_gs(2, 7)
+	_open_unit_gates(gs)
+	var divisor = gs.db.get_difficulty("warlord").get("unowned_tiles_per_wild_unit")
+	var unowned = 0
+	for t in gs.map.all_tiles():
+		if t.owner_player_id < 0:
+			unowned += 1
+	var target = unowned / int(divisor)
+	for _i in range(10):
+		WildForces.spawn_turn(gs, gs.rng)
+	assert_eq(_wild_count(gs), target,
+		"Wild density converges to one unit per %d unowned tiles" % divisor)
+	assert_true(_wild_count(gs) <= target + 1, "Global cap is target + 1")
+
+# ── Wild-city (raider camp) spawning ────────────────────────────────────────────
+
+func test_wild_city_respects_its_turn_gate() -> void:
+	var gs = make_gs(2, 7)
+	gs.difficulty_id = "warlord"   # city gate is 45
+	gs.turn_number = 44
+	for _i in range(50):           # many rolls; none should land before the gate
+		WildForces.spawn_raider_settlement(gs, gs.rng)
+	assert_eq(_camp_count(gs), 0, "No raider camp before the city turn gate")
+
+func test_wild_city_density_cap_and_distance_from_culture() -> void:
+	var gs = make_gs(2, 7)
+	gs.difficulty_id = "warlord"   # city divisor 140, prob 5%
+	gs.turn_number = 60
+	var civ = make_settlement(gs, 1, 5, 5)
+	var unowned = 0
+	for t in gs.map.all_tiles():
+		if t.owner_player_id < 0:
+			unowned += 1
+	var cap = unowned / int(gs.db.get_difficulty("warlord").get("unowned_tiles_per_wild_city"))
+	for _i in range(400):          # enough rolls to hit the 5% chance repeatedly
+		WildForces.spawn_raider_settlement(gs, gs.rng)
+	var camps = _camp_count(gs)
+	assert_true(camps > 0, "Raider camps do eventually spawn past the gate")
+	assert_true(camps <= cap, "Camp count (%d) stays within the density cap (%d)" % [camps, cap])
+	var min_dist = gs.db.get_constant("wild_city_min_distance", 6)
+	for s in gs.settlements:
+		if s.owner_player_id == -2:
+			assert_true(gs.map.distance(s.x, s.y, civ.x, civ.y) >= min_dist,
+				"Camp keeps >= %d tiles from civ culture" % min_dist)
 
 func test_wild_units_are_capped_over_many_turns() -> void:
 	var facade = setup_facade(4242, "small",

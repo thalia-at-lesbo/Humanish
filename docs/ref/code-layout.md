@@ -314,7 +314,7 @@ Tracks war state (`at_war_with`), contacts, subordination, shared research store
 - **`PolicyEffects`** — §8 civic-effects reader (pure static): `sum_int`/`has_flag` aggregate a player's active policies' `effects` (both nested `effects` dicts and bare top-level flags); `largest_city_ids`/`is_religious_structure` are supporting helpers. The single reader of per-civic `effects`, called from `TurnEngine` (happiness/health, tile + capital output, production via `_policy_production_delta`, research/intel, treasury, Great-Person rate, new-unit XP) and `SimFacade` (rush gating, Serfdom worker speed). The mechanical policy fields stay in `SimFacade`/`TurnEngine`. See `docs/planning/designgaps.md` §2 for the wired-vs-inert breakdown
 - **`Beliefs`** — founding (first-eligible random draw), passive spread within range each turn
 - **`EconOrgs`** — founded by special person or a Great Merchant; spread like beliefs but costs treasury
-- **`WildForces`** — per-tile RNG spawn on unclaimed land tiles; raider settlements
+- **`WildForces`** — BtS-derived spawn model (§9.2 provisional): turn/era/city gates, then a per-area unowned-tile density top-up (`((unowned/divisor) − existing)/4 + 1`) for units, and a gated/probabilistic/distance-checked raider-camp spawn. Reads per-difficulty tables from `data/difficulties.json`
 - **`Pollution`** — per-settlement accumulation each turn; per-tile RNG degradation chain
 - **`WinConditions`** — stateless evaluation against `gs`; returns winning `alliance_id` or −1
 - **`Scoring`** — weighted sum of (land tiles, population, technology count) per alliance

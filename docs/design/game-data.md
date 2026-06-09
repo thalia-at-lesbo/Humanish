@@ -1274,6 +1274,34 @@ A unit does not heal on any turn it moves or fights.
 | Immortal | None | Very large AI bonus |
 | Deity | None | Maximum AI bonus |
 
+### 15.10 Wild-forces spawn tables (provisional)
+
+> **⚠️ Provisional.** Per-difficulty wild-spawn fields on each `data/difficulties.json` entry,
+> governing the §9.2 spawning model. Values are ported from Civilization IV: Beyond the Sword
+> (`CIV4HandicapInfo.xml`) and **not yet retuned** for this engine. See game-rules §9.2 for the
+> formulas that consume them.
+
+| Field | Settler | Chieftain | Warlord | Noble | Prince | Monarch | Emperor | Immortal | Deity |
+|-------|--------:|----------:|--------:|------:|-------:|--------:|--------:|---------:|------:|
+| `unowned_tiles_per_wild_unit` | 150 | 100 | 80 | 60 | 50 | 40 | 35 | 30 | 25 |
+| `unowned_water_tiles_per_wild_unit` † | 3000 | 2400 | 2200 | 2000 | 1800 | 1600 | 1400 | 1200 | 1000 |
+| `unowned_tiles_per_wild_city` | 160 | 150 | 140 | 130 | 120 | 110 | 100 | 90 | 80 |
+| `wild_creation_turns_elapsed` ‡ | 50 | 45 | 40 | 35 | 30 | 25 | 20 | 15 | 10 |
+| `wild_city_creation_turns_elapsed` ‡ | 55 | 50 | 45 | 40 | 35 | 30 | 25 | 20 | 15 |
+| `wild_city_creation_prob` (%) | 4 | 5 | 5 | 6 | 6 | 7 | 7 | 8 | 8 |
+
+† Tabled but **not yet wired** — the wild AI is land-only (game-rules §9.2).
+‡ Turn gates are **scaled by game pace** (`paces.json` `growth_scale`): Quick ×0.67, Normal ×1.0,
+Epic ×1.5, Marathon ×3.0.
+
+Supporting global constants (`data/constants.json`): `wild_city_min_distance` (6, min tiles from
+civ culture), `wild_spawn_min_distance` (2, min tiles a unit spawns from civ units/cities),
+`wild_city_ratio_num` / `wild_city_ratio_den` (3 / 2, the cities-per-civ gate), and the
+`wild_land_per_unit` / `raider_land_per_camp` / `wild_creation_turns_elapsed` /
+`wild_city_creation_turns_elapsed` / `wild_city_creation_prob` fallbacks used when a difficulty
+omits its per-level value. The Ancient era's `no_wild_units` flag (`data/ages.json`) gates the
+era check (BtS `bNoBarbUnits`).
+
 ---
 
 ## 16. Victory Conditions
