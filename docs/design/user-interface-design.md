@@ -503,6 +503,14 @@ data it shows and what actions it offers, not its layout:
   (fortified, sleeping, on sentry, healing, en route to a go-to target, or building an
   improvement; otherwise whether it still has moves this turn). This state text is produced
   by the rules layer (§9) so it always matches the order's actual semantics.
+  *(⚠️ Provisional: the worker/fishing-boat action panel should only show build actions
+  valid for the unit's current tile, the unit's domain (land vs sea), and the player's
+  known technologies. Improvements built on resource tiles before the resource's
+  `tech_required` is researched should only count the tile's base yields; once the tech
+  is unlocked the improvement should apply the full resource bonus.
+  Workers should keep building until the improvement is complete (per-turn decrement of
+  `build_turns_left`); finished tiles should display a highlighted outline and show the
+  improvement name when clicked/inspected.)*
 * **City screen**: worked-tile assignment, production queue and chooser, citizen/specialist
   assignment, contentment/wellbeing/food/production/commerce breakdowns, building list,
   hurry/conscript controls, tabs (units / buildings / wonders), rename, city scroll.
