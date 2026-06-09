@@ -106,6 +106,11 @@ static func _move_along(game_state, rng: RNG, u: Unit, tx: int, ty: int) -> void
 		var enemy: Unit = Stack.get_defender(game_state.units, sx, sy, -2, game_state)
 		if enemy != null:
 			var result: Dictionary = Combat.resolve(u, enemy, game_state, game_state.rng)
+			# Capture unit identity before CombatApply may remove dead units.
+			var atk_type: String = u.unit_type_id
+			var def_owner: int = enemy.owner_player_id
+			var def_type: String = enemy.unit_type_id
+			var def_x: int = enemy.x; var def_y: int = enemy.y
 			# Do NOT advance onto a tile that still holds a city: a city tile's garrison
 			# must be beaten first, then the city is assaulted separately (mirrors the
 			# SimFacade player-move path where advance = enemy_city == null). Without
@@ -114,8 +119,12 @@ static func _move_along(game_state, rng: RNG, u: Unit, tx: int, ty: int) -> void
 			var city_on_tile: Settlement = _enemy_settlement_at(game_state, sx, sy)
 			CombatApply.apply_unit_result(game_state, u, enemy, result,
 				city_on_tile == null)
-			game_state.pending_wild_events.append(
-				{"kind": "combat", "result": result})
+			game_state.pending_wild_events.append({
+				"kind": "combat", "result": result,
+				"attacker_type_id": atk_type,
+				"defender_owner_id": def_owner, "defender_type_id": def_type,
+				"defender_x": def_x, "defender_y": def_y
+			})
 			u.has_attacked = true
 			u.movement_left = 0
 			u.goto_x = -1; u.goto_y = -1
@@ -267,8 +276,18 @@ static func _animal_move(game_state, rng: RNG, u: Unit, tx: int, ty: int,
 		var enemy: Unit = Stack.get_defender(game_state.units, sx, sy, -2, game_state)
 		if enemy != null:
 			var result: Dictionary = Combat.resolve(u, enemy, game_state, game_state.rng)
+			# Capture unit identity before CombatApply may remove dead units.
+			var atk_type2: String = u.unit_type_id
+			var def_owner2: int = enemy.owner_player_id
+			var def_type2: String = enemy.unit_type_id
+			var def_x2: int = enemy.x; var def_y2: int = enemy.y
 			CombatApply.apply_unit_result(game_state, u, enemy, result, true)
-			game_state.pending_wild_events.append({"kind": "combat", "result": result})
+			game_state.pending_wild_events.append({
+				"kind": "combat", "result": result,
+				"attacker_type_id": atk_type2,
+				"defender_owner_id": def_owner2, "defender_type_id": def_type2,
+				"defender_x": def_x2, "defender_y": def_y2
+			})
 			u.has_attacked = true
 			u.movement_left = 0
 			return
@@ -347,8 +366,18 @@ static func _act_naval(game_state, rng: RNG, u: Unit) -> void:
 		var foe: Unit = pick[1]
 		if foe != null:
 			var result: Dictionary = Combat.resolve(u, foe, game_state, game_state.rng)
+			# Capture unit identity before CombatApply may remove dead units.
+			var atk_type3: String = u.unit_type_id
+			var def_owner3: int = foe.owner_player_id
+			var def_type3: String = foe.unit_type_id
+			var def_x3: int = foe.x; var def_y3: int = foe.y
 			CombatApply.apply_unit_result(game_state, u, foe, result, true)
-			game_state.pending_wild_events.append({"kind": "combat", "result": result})
+			game_state.pending_wild_events.append({
+				"kind": "combat", "result": result,
+				"attacker_type_id": atk_type3,
+				"defender_owner_id": def_owner3, "defender_type_id": def_type3,
+				"defender_x": def_x3, "defender_y": def_y3
+			})
 			u.has_attacked = true
 			u.movement_left = 0
 			return

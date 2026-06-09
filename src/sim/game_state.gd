@@ -96,6 +96,11 @@ var pending_great_people: Array = []
 # Each entry is {"player_id": int, "settlement_name": String, "item_type": String, "item_id": String, "item_name": String}.
 var pending_productions: Array = []
 
+# Transient city-growth records produced by TurnEngine._settlement_growth during
+# a player step, drained by SimFacade into notifications. Not serialized.
+# Each entry is {"player_id": int, "settlement_name": String, "population": int}.
+var pending_growth: Array = []
+
 # Auto-incrementing IDs
 var _next_unit_id: int = 1
 var _next_settlement_id: int = 1

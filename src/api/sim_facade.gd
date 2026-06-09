@@ -404,6 +404,7 @@ func _cmd_end_turn(player_id: int) -> bool:
 	_drain_tech_completions()
 	_drain_great_people()
 	_drain_productions()
+	_drain_growth_events()
 
 	# Trigger world step when the last player ends their turn (next wraps to index 0)
 	var next_idx: int = _get_next_player_index(player_id)
@@ -2387,6 +2388,17 @@ func _drain_wild_events() -> void:
 		match e["kind"]:
 			"combat":
 				emit_signal("combat_resolved", e["result"])
+				# Notify any player whose unit was killed by a wild attacker.
+				var def_owner: int = int(e.get("defender_owner_id", -1))
+				if def_owner >= 0 and not bool(e["result"].get("defender_survived", true)):
+					var def_type: String = str(e.get("defender_type_id", ""))
+					var def_name: String = str(_db.get_unit(def_type).get("name", def_type))
+					var dx: int = int(e.get("defender_x", -1))
+					var dy: int = int(e.get("defender_y", -1))
+					var p_owner: Player = _gs.get_player(def_owner)
+					var owner_label: String = (p_owner.name + "'s") if p_owner != null else "A"
+					_add_notification(owner_label + " " + def_name + " was killed by wild forces at ("
+						+ str(dx) + "," + str(dy) + ").", "major")
 			"razed":
 				var sid: int = int(e["settlement_id"])
 				if _selection != null and _selection.head_city() == sid:
@@ -2468,15 +2480,40 @@ func _drain_productions() -> void:
 	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
 
+# Surface city-growth records queued during a player step: one notification each,
+# then clear the queue.
+func _drain_growth_events() -> void:
+	if _gs.pending_growth.empty():
+		return
+	for entry in _gs.pending_growth:
+		var city: String = str(entry.get("settlement_name", ""))
+		var pop: int = int(entry.get("population", 0))
+		_add_notification(city + " grew to population " + str(pop) + "!", "major")
+	_gs.pending_growth = []
+	_dirty.set_dirty(IDs.DirtyRegion.DATA_PANES)
+	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
+
 # Compose a brief combat notification from the attacker and defender units.
+# When the defender is the current player's unit and was killed, a distinct
+# "Your X was killed" notification is added so losses are always visible.
 func _add_combat_notification(attacker: Unit, defender: Unit, result: Dictionary) -> void:
 	var atk_name: String = str(_db.get_unit(attacker.unit_type_id).get("name", attacker.unit_type_id))
 	var def_name: String = str(_db.get_unit(defender.unit_type_id).get("name", defender.unit_type_id))
 	var outcome: String
 	if not bool(result.get("attacker_survived", true)):
 		outcome = atk_name + " was destroyed attacking " + def_name + "."
+		# Current player's unit killed while attacking
+		if attacker.owner_player_id == _gs.current_player_id:
+			_add_notification("Your " + atk_name + " was killed at ("
+				+ str(defender.x) + "," + str(defender.y) + ").", "major")
+			return
 	elif not bool(result.get("defender_survived", true)):
 		outcome = atk_name + " defeated " + def_name + "."
+		# Current player's unit killed while defending
+		if defender.owner_player_id == _gs.current_player_id:
+			_add_notification("Your " + def_name + " was killed at ("
+				+ str(defender.x) + "," + str(defender.y) + ").", "major")
+			return
 	else:
 		outcome = atk_name + " attacked " + def_name + " — both survived."
 	_add_notification(outcome, "info")

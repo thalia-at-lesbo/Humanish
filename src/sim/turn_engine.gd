@@ -339,6 +339,11 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 		if s.has_structure("granary"):
 			carry_frac = int(db.get_structure("granary").get("effects", {}).get("food_carry_over", 50))
 		s.food_store = Fixed.scale(threshold, carry_frac)
+		gs.pending_growth.append({
+			"player_id": s.owner_player_id,
+			"settlement_name": s.name,
+			"population": s.population
+		})
 	elif s.food_store < 0:
 		s.food_store = 0
 		if s.population > 1:

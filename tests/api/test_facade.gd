@@ -436,3 +436,87 @@ func test_end_turn_loop_runs_assembly_sessions() -> void:
 
 func _on_assembly_event(_e, flag) -> void:
 	flag[0] = true
+
+# ── Issue 16: city growth notification ────────────────────────────────────────
+
+func test_facade_growth_notification_appears_in_queue() -> void:
+	# Manually push a pending_growth record and drain it; the notification must
+	# appear in the queue so the message log shows it.
+	var gs = make_gs(1)
+	var f = bare_facade(gs)
+	f._hooks = hooks()
+	gs.pending_growth = [{"player_id": 1, "settlement_name": "Athens", "population": 2}]
+	f._drain_growth_events()
+	assert_true(gs.pending_growth.empty(), "pending_growth cleared after drain")
+	var found = false
+	for n in f.get_notification_queue():
+		if str(n.get("text", "")).find("Athens") >= 0 and str(n.get("text", "")).find("2") >= 0:
+			found = true
+	assert_true(found, "Growth notification for Athens reaching pop 2 appears in the queue")
+
+func test_city_growth_notification_via_end_turn() -> void:
+	# A city with enough food to grow immediately should produce a notification
+	# after end-turn drives the settlement step.
+	var gs = make_gs(1)
+	var s = make_settlement(gs, 1, 5, 5, 1)
+	s.name = "Corinth"
+	s.food_store = 9999  # triggers growth on the first turn
+	s.worked_tiles = [[5, 5]]
+	gs.current_player_id = 1
+	var f = bare_facade(gs)
+	f._hooks = hooks()
+	f.apply_command(Commands.end_turn(1))
+	var found = false
+	for n in f.get_notification_queue():
+		if str(n.get("text", "")).find("Corinth") >= 0:
+			found = true
+	assert_true(found, "End-turn growth produces a notification mentioning the city name")
+
+# ── Issue 19: event log for player unit deaths ────────────────────────────────
+
+func test_notification_when_current_player_unit_killed_defending() -> void:
+	# Current player's unit is the defender and dies — must appear in the log.
+	var gs = make_gs(2)
+	var defender = make_warrior(gs, 1, 5, 5)
+	defender.health = 1  # will die
+	var attacker = make_warrior(gs, 2, 5, 6)
+	attacker.base_strength = 50  # guaranteed win
+	gs.current_player_id = 1
+	var f = bare_facade(gs)
+	f._hooks = hooks()
+	var result = Combat.resolve(attacker, defender, gs, gs.rng)
+	f._apply_combat_result(attacker, defender, result, false)
+	f._add_combat_notification(attacker, defender, result)
+	if not result.get("defender_survived", true):
+		var found = false
+		for n in f.get_notification_queue():
+			if str(n.get("text", "")).find("killed") >= 0 or str(n.get("text", "")).find("Your") >= 0:
+				found = true
+		assert_true(found, "Player's unit killed while defending generates a kill notification")
+
+func test_wild_event_drain_notifies_player_unit_death() -> void:
+	# A pending wild event flagging a player unit's death should produce a
+	# notification when drained.
+	var gs = make_gs(2)
+	var f = bare_facade(gs)
+	f._hooks = hooks()
+	gs.get_player(1).name = "Alice"
+	gs.pending_wild_events = [{
+		"kind": "combat",
+		"result": {"attacker_survived": true, "defender_survived": false,
+			"attacker_health_after": 80, "defender_health_after": 0,
+			"attacker_withdrew": false, "rounds": 3,
+			"attacker_xp_gain": 5, "defender_xp_gain": 0,
+			"spillover_damage": 0, "flanking_damage": 0},
+		"attacker_type_id": "warrior",
+		"defender_owner_id": 1,
+		"defender_type_id": "warrior",
+		"defender_x": 7, "defender_y": 3
+	}]
+	f._drain_wild_events()
+	var found = false
+	for n in f.get_notification_queue():
+		var txt: String = str(n.get("text", ""))
+		if txt.find("killed") >= 0 or txt.find("wild") >= 0 or txt.find("Wild") >= 0:
+			found = true
+	assert_true(found, "Draining a wild kill event produces a notification for the player")

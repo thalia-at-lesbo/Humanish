@@ -31,6 +31,28 @@ func test_growth_pop_increases_above_threshold() -> void:
 	TurnEngine._settlement_growth(gs, s, gs.get_player(1))
 	assert_true(s.population >= pop_before, "Population should not decrease during growth")
 
+func test_growth_queues_pending_growth_record() -> void:
+	var gs = make_gs(1)
+	var s = make_settlement(gs, 1, 5, 5)
+	s.name = "Sparta"
+	s.food_store = 9999  # guaranteed growth
+	s.worked_tiles = [[5, 5]]
+	TurnEngine._settlement_growth(gs, s, gs.get_player(1))
+	assert_true(s.population > 1, "Population grew")
+	assert_eq(gs.pending_growth.size(), 1, "One pending_growth record queued on pop increase")
+	assert_eq(str(gs.pending_growth[0].get("settlement_name", "")), "Sparta",
+		"Growth record names the city")
+	assert_eq(int(gs.pending_growth[0].get("population", 0)), s.population,
+		"Growth record has the new population")
+
+func test_no_growth_no_pending_record() -> void:
+	var gs = make_gs(1)
+	var s = make_settlement(gs, 1, 5, 5, 3)
+	s.food_store = 0  # not enough to grow
+	s.worked_tiles = []
+	TurnEngine._settlement_growth(gs, s, gs.get_player(1))
+	assert_eq(gs.pending_growth.size(), 0, "No growth record when city does not grow")
+
 func test_starvation_cannot_increase_pop() -> void:
 	var gs = make_gs(1)
 	var s = make_settlement(gs, 1, 5, 5, 3)
