@@ -30,8 +30,7 @@
     "id": "diplomatic",
     "type": "diplomatic",
     "name": "Diplomatic",
-    "vote_share_required": 67,
-    "notes": "Win the United Nations election."
+    "notes": "Win the World Leader election via the United Nations (secular, 60% of votes, candidate must hold Mass Media) or the Apostolic Palace (religious, 75% of votes, every living civ must hold the AP belief). Awarded directly by Assembly.apply_effect('diplomatic_victory'); the threshold is body-dependent (un_diplo_pass_share / ap_diplo_pass_share). A candidate cannot win if their own alliance contributes >= diplo_too_big_share (75%) of the total vote weight."
   },
   "time": {
     "id": "time",
