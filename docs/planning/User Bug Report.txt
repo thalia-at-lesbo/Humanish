@@ -72,7 +72,10 @@ June 8, 19:30 EDT (All fixed June 9, 2026 — see status notes per item)
 
 Jun 9, 2026 17:21 — All fixed Jun 9, 2026
 -- [FIXED] map should also move by click and drag
-   > Middle-mouse-button drag pans the camera; supplements arrow-key and wheel-zoom.
+   > Left-button press-drag now pans the map (the natural gesture): the click
+     action is deferred to release and suppressed once the pointer passes a 6px
+     threshold, so a drag pans without changing selection while a plain click
+     still selects. Middle-mouse drag is retained. (InputRouter + WorldView.pan_by)
 -- [FIXED] city menu should show city health, and if city is growing (added to ui design as provisional)
    > City screen now has a "City status" section: Health X/MAX (full/recovering)
      from TurnEngine.city_max_health, and a Growth line (growing/stagnant/

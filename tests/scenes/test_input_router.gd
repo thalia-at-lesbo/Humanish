@@ -18,6 +18,73 @@ func _router():
 	add_child_autofree(ir)
 	return ir
 
+# Minimal WorldView double: maps 64px cells to tiles and records pans.
+class _StubView:
+	extends Reference
+	var panned = Vector2.ZERO
+	func screen_to_tile(p):
+		return Vector2(int(p.x / 64), int(p.y / 64))
+	func pan_by(d):
+		panned += d
+	func flash_move_tile(_a, _b):
+		pass
+
+func _mb(idx, pressed, pos):
+	var e = InputEventMouseButton.new()
+	e.button_index = idx
+	e.pressed = pressed
+	e.position = pos
+	return e
+
+func _mm(pos, mask, rel):
+	var e = InputEventMouseMotion.new()
+	e.position = pos
+	e.button_mask = mask
+	e.relative = rel
+	return e
+
+# ── Left press-drag pans the map; a plain click still selects ─────────────────
+
+func test_left_press_drag_pans_and_suppresses_select() -> void:
+	var facade = setup_facade(3131, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	make_unit(gs, "warrior", pid, 1, 1)   # under the press point (64,64)
+	facade.clear_selection()
+
+	var ir = _router()
+	ir._facade = facade
+	var stub = _StubView.new()
+	ir._world_view = stub
+	ir._handle_mouse_button(_mb(BUTTON_LEFT, true, Vector2(64, 64)))
+	ir._handle_mouse_motion(_mm(Vector2(104, 64), BUTTON_MASK_LEFT, Vector2(40, 0)))
+	ir._handle_mouse_button(_mb(BUTTON_LEFT, false, Vector2(104, 64)))
+
+	assert_true(stub.panned.length() > 0.0, "A left press-drag pans the camera")
+	assert_eq(facade.get_selection().head_unit(), -1,
+		"A left press-drag must not select — it was a pan, not a click")
+
+func test_left_click_without_drag_selects() -> void:
+	var facade = setup_facade(3232, "small",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var gs = facade.get_state()
+	var pid = gs.players[0].id
+	gs.current_player_id = pid
+	var u = make_unit(gs, "warrior", pid, 1, 1)
+	facade.clear_selection()
+
+	var ir = _router()
+	ir._facade = facade
+	ir._world_view = _StubView.new()
+	# Press and release at the same point — no drag.
+	ir._handle_mouse_button(_mb(BUTTON_LEFT, true, Vector2(64, 64)))
+	ir._handle_mouse_button(_mb(BUTTON_LEFT, false, Vector2(64, 64)))
+
+	assert_eq(facade.get_selection().head_unit(), u.id,
+		"A left click with no drag selects the unit under the cursor")
+
 func test_click_cycles_through_stacked_units() -> void:
 	var facade = setup_facade(1313, "small",
 		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])

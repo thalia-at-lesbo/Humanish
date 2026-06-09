@@ -56,6 +56,18 @@ func test_center_on_player_false_with_nothing_owned() -> void:
 	assert_false(wv.center_on_player(facade.get_state().players[0].id),
 		"Centering reports false when the player owns nothing to look at")
 
+func test_pan_by_shifts_the_camera() -> void:
+	var facade = setup_facade(1818, "standard",
+		[{"name": "A", "leader_id": "", "traits": [], "starting_gold": 50}], ["time"])
+	var wv = _world_view(facade)
+	var center = wv.get_viewport_rect().size * 0.5
+	var before = wv.screen_to_tile(center)
+	# Drag the map left: the tile under a fixed screen point shifts right.
+	wv.pan_by(Vector2(-256, 0))
+	var after = wv.screen_to_tile(center)
+	assert_true(after.x > before.x,
+		"pan_by shifts which tile sits under a fixed screen point")
+
 # ── Fog of war ───────────────────────────────────────────────────────────────
 
 func test_fog_updates_when_world_changes() -> void:

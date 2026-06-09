@@ -23,6 +23,15 @@ var _tooltip_label: Label       # set by main after HUD is available
 # flows through their army without re-clicking. On by default.
 var auto_advance: bool = true
 
+# Left-button press-drag pans the map (the natural click-and-drag gesture). The
+# left-click action is deferred to release so a drag does not also change the
+# selection; once the pointer moves past DRAG_THRESHOLD pixels the gesture is
+# treated as a pan and the release-click is suppressed.
+const DRAG_THRESHOLD: float = 6.0
+var _left_down: bool = false
+var _left_press_pos: Vector2 = Vector2.ZERO
+var _left_dragged: bool = false
+
 func init(facade, world_view) -> void:
 	_facade = facade
 	_world_view = world_view
@@ -46,27 +55,43 @@ func _unhandled_input(event: InputEvent) -> void:
 		_handle_touch(event)
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
-	if not event.pressed:
-		return
-
+	# Note: left-button releases are handled below (deferred click), so this does
+	# not early-return on !pressed. Right-button acts on press only.
 	var tile_pos: Vector2 = _world_view.screen_to_tile(event.position)
 	var tx: int = int(tile_pos.x)
 	var ty: int = int(tile_pos.y)
 	var gs = _facade.get_state()
 
 	if event.button_index == BUTTON_LEFT:
-		var mode: int = _facade.get_interface_mode()
-		if mode != IDs.InterfaceMode.SELECTION:
-			# In targeting mode: check validity and dispatch mission
-			if _facade.get_mode_tile_validity(tx, ty) > 0:
-				_dispatch_targeting_mode(mode, tx, ty)
-				_facade.exit_interface_mode()
+		if event.pressed:
+			# Defer the click action to release so a press-drag pans the map
+			# (see _handle_mouse_motion) without changing the selection.
+			_left_down = true
+			_left_press_pos = event.position
+			_left_dragged = false
 			return
+		# Release: a genuine click (no drag) selects / dispatches a target.
+		if not _left_down:
+			return
+		_left_down = false
+		if _left_dragged:
+			return  # this gesture was a map pan, not a click
+		_perform_left_click(tx, ty, gs)
 
-		_handle_select_click(tx, ty, gs)
-
-	elif event.button_index == BUTTON_RIGHT:
+	elif event.button_index == BUTTON_RIGHT and event.pressed:
 		_handle_move_click(tx, ty, gs)
+
+# The left-click action (targeting dispatch in a targeting mode, else select),
+# shared by the mouse-release path and a single touch tap.
+func _perform_left_click(tx: int, ty: int, gs) -> void:
+	var mode: int = _facade.get_interface_mode()
+	if mode != IDs.InterfaceMode.SELECTION:
+		# In targeting mode: check validity and dispatch mission.
+		if _facade.get_mode_tile_validity(tx, ty) > 0:
+			_dispatch_targeting_mode(mode, tx, ty)
+			_facade.exit_interface_mode()
+		return
+	_handle_select_click(tx, ty, gs)
 
 # Left-click = SELECT ONLY (never moves), so targeting is never ambiguous:
 #   • A tile carrying the player's own subject(s) → select / cycle them: units in
@@ -110,6 +135,14 @@ func _handle_move_click(tx: int, ty: int, gs) -> void:
 	_maybe_auto_advance(gs)
 
 func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
+	# Left-button press-drag pans the map. Past DRAG_THRESHOLD the gesture becomes
+	# a pan (suppressing the release-click); the camera follows the pointer.
+	if _left_down and (event.button_mask & BUTTON_MASK_LEFT) != 0:
+		if not _left_dragged and event.position.distance_to(_left_press_pos) > DRAG_THRESHOLD:
+			_left_dragged = true
+		if _left_dragged and _world_view != null and _world_view.has_method("pan_by"):
+			_world_view.pan_by(event.relative)
+
 	if _tooltip_label == null:
 		return
 	var tile_pos: Vector2 = _world_view.screen_to_tile(event.position)
@@ -145,12 +178,10 @@ func _handle_keyboard(event: InputEventKey) -> void:
 func _handle_touch(event: InputEventScreenTouch) -> void:
 	if not event.pressed:
 		return
-	# Single tap behaves like left click
-	var fake: InputEventMouseButton = InputEventMouseButton.new()
-	fake.button_index = BUTTON_LEFT
-	fake.pressed = true
-	fake.position = event.position
-	_handle_mouse_button(fake)
+	# A single tap behaves like an immediate left click (no press-drag pan on
+	# touch), so it dispatches the select/targeting action at once.
+	var tile_pos: Vector2 = _world_view.screen_to_tile(event.position)
+	_perform_left_click(int(tile_pos.x), int(tile_pos.y), _facade.get_state())
 
 func _dispatch_targeting_mode(mode: int, tx: int, ty: int) -> void:
 	var gs = _facade.get_state()
