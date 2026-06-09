@@ -27,7 +27,9 @@ func test_blocks_start_until_every_player_picks_a_society() -> void:
 	screen.init(make_db(), funcref(self, "_on_start"))
 	_started = false
 
-	# Default 2 players. Leave player 1 at "— No Society —" (index 0).
+	# Explicitly set 2 players for this test.
+	screen._player_count_spin.value = 2
+	# Leave player 1 at "— No Society —" (index 0).
 	screen._player_rows[0]["society_btn"].select(0)
 	screen._player_rows[1]["society_btn"].select(1)
 	assert_eq(screen._players_missing_society(2), [1],
@@ -53,7 +55,8 @@ func test_ai_toggle_flows_into_player_is_ai() -> void:
 	_started = false
 	_started_facade = null
 
-	# Two players, both with a society so Start proceeds.
+	# Explicitly set 2 players; both with a society so Start proceeds.
+	screen._player_count_spin.value = 2
 	screen._player_rows[0]["society_btn"].select(1)
 	screen._player_rows[1]["society_btn"].select(1)
 	# Player 1 = human, player 2 = AI (its default).

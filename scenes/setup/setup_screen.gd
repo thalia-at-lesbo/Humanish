@@ -20,6 +20,7 @@ var _on_start_callback  # FuncRef(facade, db) called when setup completes
 
 var _player_rows: Array = []
 var _world_size_btn: OptionButton
+var _world_size_ids: Array = []
 var _map_type_btn: OptionButton
 var _map_type_ids: Array = []
 var _pace_btn: OptionButton
@@ -28,11 +29,15 @@ var _aggressive_wild_check: CheckBox
 var _seed_edit: LineEdit
 var _player_count_spin: SpinBox
 var _error_label: Label
+var _player_count_user_set: bool = false
+var _building_ui: bool = false
 
 func init(db, on_start) -> void:
 	_db = db
 	_on_start_callback = on_start
+	_building_ui = true
 	_build_ui()
+	_building_ui = false
 
 func _build_ui() -> void:
 	var vbox: VBoxContainer = VBoxContainer.new()
@@ -48,23 +53,24 @@ func _build_ui() -> void:
 	title.text = "New Game"
 	vbox.add_child(title)
 
-	# Player count
+	# Player count — default comes from the initial world size's players_suggested.
+	# The SpinBox value is set explicitly so it is visible immediately on open.
 	var count_row: HBoxContainer = HBoxContainer.new()
 	var count_lbl: Label = Label.new()
 	count_lbl.text = "Players:"
 	_player_count_spin = SpinBox.new()
 	_player_count_spin.min_value = 2
-	_player_count_spin.max_value = 4
-	_player_count_spin.value = 2
+	_player_count_spin.max_value = 999
+	_player_count_spin.value = _default_player_count("standard")
 	_player_count_spin.connect("value_changed", self, "_on_player_count_changed")
 	count_row.add_child(count_lbl)
 	count_row.add_child(_player_count_spin)
 	vbox.add_child(count_row)
 
-	# Player name + society rows (up to 4)
+	# Player name + society rows (up to 16 — well beyond any map's suggested count)
 	var societies: Dictionary = _db.get_societies()
 	var society_ids: Array = societies.keys()
-	for i in range(4):
+	for i in range(16):
 		var row: HBoxContainer = HBoxContainer.new()
 		var lbl: Label = Label.new()
 		lbl.text = "Player " + str(i + 1) + ":"
@@ -89,16 +95,27 @@ func _build_ui() -> void:
 		vbox.add_child(row)
 		row.visible = i < 2
 
-	# World size
+	# World size — all sizes from world_sizes.json, defaulting to "standard".
 	var ws_row: HBoxContainer = HBoxContainer.new()
 	var ws_lbl: Label = Label.new()
 	ws_lbl.text = "World size:"
 	_world_size_btn = OptionButton.new()
-	for size_id in ["tiny", "small", "standard"]:
-		_world_size_btn.add_item(size_id)
+	_world_size_ids = _db.world_sizes.keys()
+	var ws_default_idx: int = 0
+	for wi in range(_world_size_ids.size()):
+		var wsid: String = _world_size_ids[wi]
+		var ws_data: Dictionary = _db.get_world_size(wsid)
+		_world_size_btn.add_item(ws_data.get("name", wsid))
+		if wsid == "standard":
+			ws_default_idx = wi
+	_world_size_btn.select(ws_default_idx)
+	_world_size_btn.connect("item_selected", self, "_on_world_size_changed")
 	ws_row.add_child(ws_lbl)
 	ws_row.add_child(_world_size_btn)
 	vbox.add_child(ws_row)
+	# Now that the world-size button is initialised, update the player count to
+	# match the default world size.
+	_player_count_spin.value = _default_player_count(_world_size_ids[ws_default_idx])
 
 	# Map type (data-driven from data/map_types.json)
 	var mt_row: HBoxContainer = HBoxContainer.new()
@@ -168,10 +185,26 @@ func _build_ui() -> void:
 	_error_label.visible = false
 	vbox.add_child(_error_label)
 
+func _default_player_count(size_id: String) -> int:
+	var ws: Dictionary = _db.get_world_size(size_id)
+	var suggested: int = ws.get("players_suggested", 4)
+	return suggested if suggested >= 2 else 2
+
 func _on_player_count_changed(value: float) -> void:
+	if not _building_ui:
+		_player_count_user_set = true
 	var count: int = int(value)
-	for i in range(_player_rows.size()):
+	var rows: int = _player_rows.size()
+	for i in range(rows):
 		_player_rows[i]["row"].visible = i < count
+
+func _on_world_size_changed(idx: int) -> void:
+	if not _player_count_user_set and idx >= 0 and idx < _world_size_ids.size():
+		# Auto-update the player count to match the new world size.
+		# Temporarily suppress user-set tracking while we apply the default.
+		var was_user_set: bool = _player_count_user_set
+		_player_count_spin.value = _default_player_count(_world_size_ids[idx])
+		_player_count_user_set = was_user_set
 
 # Returns the 1-based player numbers that have no society selected (index 0 of the
 # option button is the "— No Society —" placeholder). Empty = all valid.
@@ -184,6 +217,8 @@ func _players_missing_society(count: int) -> Array:
 
 func _on_start_pressed() -> void:
 	var count: int = int(_player_count_spin.value)
+	if count > _player_rows.size():
+		count = _player_rows.size()
 
 	# Bug 1: every player must pick a society before the game can start.
 	var missing: Array = _players_missing_society(count)
@@ -223,7 +258,9 @@ func _on_start_pressed() -> void:
 			"is_ai": row_data["ai_check"].pressed
 		})
 
-	var world_size_id: String = _world_size_btn.get_item_text(_world_size_btn.selected)
+	var world_size_id: String = "standard"
+	if _world_size_btn.selected >= 0 and _world_size_btn.selected < _world_size_ids.size():
+		world_size_id = _world_size_ids[_world_size_btn.selected]
 	var map_type_id: String = "continents"
 	if _map_type_btn.selected >= 0 and _map_type_btn.selected < _map_type_ids.size():
 		map_type_id = _map_type_ids[_map_type_btn.selected]
