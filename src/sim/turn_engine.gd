@@ -325,7 +325,7 @@ static func _settlement_growth(gs: GameState, s: Settlement, player: Player) -> 
 	# Wellbeing: deficit reduces food surplus
 	_update_wellbeing(gs, s, player, db)
 	var effective_food: int = total_food - s.wellbeing_deficit
-	var consumed: int = s.population * 2
+	var consumed: int = s.population * db.get_constant("food_per_citizen", 2)
 	var surplus: int = effective_food - consumed
 
 	s.food_store += surplus
