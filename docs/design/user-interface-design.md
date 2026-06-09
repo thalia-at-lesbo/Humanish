@@ -506,6 +506,9 @@ data it shows and what actions it offers, not its layout:
 * **City screen**: worked-tile assignment, production queue and chooser, citizen/specialist
   assignment, contentment/wellbeing/food/production/commerce breakdowns, building list,
   hurry/conscript controls, tabs (units / buildings / wonders), rename, city scroll.
+  *(⚠️ Provisional: city screen should also display current health/siege HP
+  (`settlement.health`) and a growth indicator (growing/shrinking/stable based on
+  `food_store` vs per-population threshold).)*
 * **Tech chooser** and **tech tree**: pick current research, see prerequisites/derived
   techs and what each unlocks.
 * **Policy/civics screen**: view and switch governing policies; see effects and switch
