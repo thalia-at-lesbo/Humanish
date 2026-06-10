@@ -475,19 +475,28 @@ than the last.
 
 ### 4.11 Feature clearing and chopping (provisional)
 
-> **⚠️ Provisional — implemented, not verified.** The base chop yield lives in
-> `features.json` (`chop_yield`); the tech-bonus and border magnitudes live in
-> `constants.json` (`chop_yield_tech`, `chop_yield_tech_bonus_pct`,
-> `chop_outside_borders_pct`) and are placeholders to be tuned against the reference game.
+> **⚠️ Provisional — implemented, not verified.** The base chop yield and clear duration live
+> in `features.json` (`chop_yield`, `clear_turns`); the tech-bonus and border magnitudes live in
+> `constants.json` (`chop_yield_tech`, `chop_yield_tech_bonus_pct`, `chop_outside_borders_pct`,
+> `chop_default_turns`) and are placeholders to be tuned against the reference game.
 
-When a worker **completes an improvement** on a tile carrying a *removable* surface feature
-(forest or jungle, flagged `removable` in `features.json`), the feature is **cleared** as part
-of placing the improvement — **unless** the improvement preserves it. An improvement preserves
-the feature when it is flagged `preserves_feature` (camp, lumbermill, forest preserve, fort) or
-when it `requires_feature` that same feature; those keep their vegetation.
+A *removable* surface feature (forest or jungle, flagged `removable` in `features.json`) is felled
+in **two ways**, both available only to worker-type (can-build) units:
 
-Clearing a **forest** yields a one-time burst of **production** (the *chop*), delivered to the
-**nearest city the clearing player owns**:
+1. **Implicitly, by building over it.** When a worker **completes an improvement** on a tile
+   carrying a removable feature, the feature is **cleared** as part of placing the improvement —
+   **unless** the improvement preserves it. An improvement preserves the feature when it is flagged
+   `preserves_feature` (camp, lumbermill, forest preserve, fort) or when it `requires_feature` that
+   same feature; those keep their vegetation.
+2. **Explicitly, as a standalone chop order.** A worker on a tile with a removable feature may be
+   ordered to **clear it on its own**, placing no improvement. The order takes the feature's
+   `clear_turns` (forest = 4, jungle = 6; falling back to `chop_default_turns`) worker-turns, runs
+   over the turn pipeline exactly like an improvement build (no progress on the issuing turn), and
+   is **abandoned if the worker leaves the tile**. On completion the feature is removed and any
+   chop yield is delivered.
+
+Either way, clearing a **forest** yields a one-time burst of **production** (the *chop*), delivered
+to the **nearest city the clearing player owns**:
 
 * The base amount is the feature's `chop_yield` (forest = 20).
 * **Tech bonus.** Once the player has researched the **chop tech** (`chop_yield_tech`, Mathematics)

@@ -69,6 +69,10 @@ static func unit_state_text(u) -> String:
         var t: int = u.build_turns_left
         return "Building " + u.building_improvement.capitalize() \
             + ((" (" + str(t) + " turn(s) left)") if t > 0 else "")
+    if u.clearing_feature != "":
+        var ct: int = u.build_turns_left
+        return "Clearing " + u.clearing_feature.capitalize() \
+            + ((" (" + str(ct) + " turn(s) left)") if ct > 0 else "")
     if u.goto_x >= 0:
         return "Moving to (" + str(u.goto_x) + ", " + str(u.goto_y) + ")"
     if u.is_sleep_until_healed:

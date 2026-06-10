@@ -740,9 +740,9 @@ static func _defence_power(gs, d) -> int:
 # Critically it never re-issues a build that is already underway (which would
 # reset its progress), so builds actually complete.
 static func _manage_worker(facade, gs, u, player_id: int) -> void:
-	# Already building: hold the tile (issue no command) so the build advances to
-	# completion in the turn pipeline instead of being restarted every turn.
-	if u.building_improvement != "":
+	# Already building or chopping: hold the tile (issue no command) so the order
+	# advances to completion in the turn pipeline instead of being restarted.
+	if u.building_improvement != "" or u.clearing_feature != "":
 		return
 
 	# 1. Resources first — improve the current tile's resource, else head for the

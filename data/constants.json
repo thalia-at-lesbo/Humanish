@@ -63,6 +63,7 @@
   "fresh_water_health": 2,
   "upkeep_distance_scale": 1,
   "upkeep_size_scale": 1,
+  "chop_default_turns": 4,
   "chop_yield_tech": "mathematics",
   "chop_yield_tech_bonus_pct": 50,
   "chop_outside_borders_pct": 50,

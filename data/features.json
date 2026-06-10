@@ -8,6 +8,7 @@
     "defence_bonus": 50,
     "health_bonus": 1,
     "chop_yield": 20,
+    "clear_turns": 4,
     "removable": true,
     "notes": "Chopped when a non-preserving improvement is built: chop_yield production to the nearest city, +50% with the chop tech (Mathematics), full inside borders / half outside"
   },
@@ -19,8 +20,9 @@
     "movement_cost_add": 100,
     "defence_bonus": 50,
     "health_penalty": 1,
+    "clear_turns": 6,
     "removable": true,
-    "notes": "Removed before most improvements; disease risk"
+    "notes": "Removed before most improvements; disease risk. Chops for nothing (no chop_yield)"
   },
   "flood_plains": {
     "id": "flood_plains",

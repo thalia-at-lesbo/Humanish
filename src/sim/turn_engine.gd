@@ -171,6 +171,10 @@ static func player_step(gs: GameState, player_id: int, hooks: Hooks) -> void:
 			# set has_moved, so no progress is made on the issuing turn).
 			if u.building_improvement != "":
 				_advance_worker_build(gs, u)
+			# Likewise a standalone chop/clear order advances and, on completion,
+			# fells the feature and delivers any chop yield (§4.11).
+			elif u.clearing_feature != "":
+				_advance_worker_chop(gs, u)
 		# Auto-wake when a heal-stance unit reaches full health (after healing above).
 		if in_heal_stance and u.health >= 100:
 			# Unit is now fully healed: drop the stance so it wakes idle next turn.
@@ -904,6 +908,21 @@ static func _apply_feature_clearing(gs: GameState, u: Unit, tile: Tile,
 	if bool(imp.get("preserves_feature", false)) \
 			or str(imp.get("requires_feature", "")) == feat_id:
 		return
+	_chop_tile(gs, u, tile, entry)
+
+# Fell the removable feature on `tile`: clear it, and (for a forest) deliver its
+# chop_yield to the nearest owned city as production. The researched chop tech
+# (Mathematics) raises the yield by chop_yield_tech_bonus_pct, and the full amount
+# lands when the chopped tile is inside the player's borders, scaled to
+# chop_outside_borders_pct when it is not. Jungle has no chop_yield and clears for
+# nothing. Records the outcome on `entry` for the facade to surface. Assumes the
+# caller has decided the feature should be cleared (no preserve checks here), so it
+# is shared by improvement completion (§5) and the standalone chop order (§4.11).
+static func _chop_tile(gs: GameState, u: Unit, tile: Tile, entry: Dictionary) -> void:
+	var feat_id: String = tile.feature_id
+	if feat_id == "":
+		return
+	var feat: Dictionary = gs.db.get_feature(feat_id)
 	tile.feature_id = ""
 	entry["cleared_feature"] = feat_id
 	var chop: int = int(feat.get("chop_yield", 0))
@@ -925,6 +944,28 @@ static func _apply_feature_clearing(gs: GameState, u: Unit, tile: Tile,
 	city.production_store += chop
 	entry["chop_yield"] = chop
 	entry["chop_city_id"] = city.id
+
+# Advance a standalone chop/clear order one turn; on completion fell the feature
+# (no improvement is placed) and deliver any chop yield, queuing an entry the
+# facade surfaces as a notification (§4.11). Mirrors _advance_worker_build.
+static func _advance_worker_chop(gs: GameState, u: Unit) -> void:
+	if u.build_turns_left > 0:
+		u.build_turns_left -= 1
+	if u.build_turns_left > 0:
+		return
+	var tile: Tile = gs.map.get_tile(u.x, u.y)
+	# Only clear if the ordered feature is still the one on the tile (it cannot have
+	# changed without cancelling the order, but guard defensively).
+	if tile != null and tile.feature_id != "" and tile.feature_id == u.clearing_feature:
+		var entry: Dictionary = {
+			"player_id": u.owner_player_id,
+			"improvement_id": "",
+			"x": u.x, "y": u.y
+		}
+		_chop_tile(gs, u, tile, entry)
+		gs.pending_improvements.append(entry)
+	u.clearing_feature = ""
+	u.build_turns_left = 0
 
 # Nearest settlement owned by `player_id` to (x, y), by map distance; null if the
 # player holds no city. Deterministic (settlement order, integer distance, no RNG).
