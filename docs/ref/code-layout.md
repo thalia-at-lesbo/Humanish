@@ -9,24 +9,27 @@ A guide to how the codebase is structured and how the pieces connect at runtime.
 ## Directory map
 
 ```
-project.godot               Godot 3.6 project file; registers all class_name globals
-                            main_scene → scenes/menus/start_menu.tscn
-data/                       24 JSON config tables — all numeric constants and content live here
+project.godot               Godot 3.6 project file (v0.4.4); registers all class_name
+                            globals; main_scene → scenes/menus/start_menu.tscn
+data/                       24 JSON config tables — all numeric constants and content
+                            live here (hotkeys.json loaded separately by HotkeyMap)
 src/
   core/                     Foundation: math, IDs, RNG, data loading, debug ring buffer
   world/                    Map geometry, tile output formula, regions, cultural influence
   sim/                      Rule modules: every §3–§11 mechanic (incl. eras, assembly,
-                            culture revolt, wild-forces AI, shared combat application)
+                            culture revolt, wild-forces AI, nuclear weapons, shared
+                            combat application)
   api/                      Public surface: commands, save/load, facade, AI/debug clients
-  net/                      Pure remote-multiplayer protocol + server CLI parsing
+  net/                      Pure remote-multiplayer wire protocol + server CLI parsing
                             (net_protocol, net_config — no sockets; see network-design.md)
 scenes/
   menus/                    start_menu.tscn/.gd  — entry point; title screen + nav
   setup/                    setup_screen.gd      — new-game config (players, society, world params)
   main.tscn / main.gd       Root game scene; wires all subsystems to SimFacade
-  world/                    world_view.tscn, fog_layer.gd, minimap.gd
-  hud/                      hud.tscn, turn_score_bar, research_bar, slider_panel,
-                            selection_panel, message_log, end_turn_button
+  world/                    world_view.tscn, fog_layer.gd
+  hud/                      hud.tscn, menu_bar, turn_score_bar, research_bar,
+                            slider_panel, selection_panel, message_log,
+                            end_turn_button, minimap (overlay)
   screens/                  city_screen, tech_chooser, policy_screen,
                             diplomacy_screen, save_load_screen, pause_menu;
                             info_screen (shared read-only scaffold) + the advisor
@@ -96,22 +99,22 @@ The wall is enforced by convention: `sim/` and `world/` are pure GDScript `Refer
 ## Presentation layer (`scenes/`)
 
 ### `StartMenu` (`scenes/menus/`)
-The Godot `main_scene`. A full-screen `Control` that builds its UI programmatically. On `_ready()` it loads `DataDB`; the "New Game" button instantiates `SetupScreen` and hides the menu; "Exit" calls `get_tree().quit()`. When `SetupScreen` completes, `StartMenu` instantiates `main.tscn`, calls `main.init_with_facade(facade, db)` before adding it to the tree, sets it as `current_scene`, then frees itself.
+The Godot `main_scene`. A full-screen `Control` that builds its UI programmatically. On `_ready()` it loads `DataDB`; buttons: **New Game** (instantiates `SetupScreen` and hides the menu), **Load Game** (lists `.sav` files from `user://saves/`, builds a new facade via `init_for_load(…)` + `load_save(…)`, then hands it to `main.tscn`), **Multiplayer** (opens `multiplayer_setup.gd` for client join), **Multiplayer Server** (opens `server_setup.gd` for in-process host), **About** (instantiates `about_screen.gd`), and **Exit** (calls `get_tree().quit()`). When a game is ready (setup complete / save loaded / multiplayer connected) `StartMenu` instantiates `main.tscn`, calls `main.init_with_facade(facade, db)` before adding it to the tree, sets it as `current_scene`, then frees itself. For remote multiplayer, the live `NetClient` node is reparented into the main scene so it keeps polling.
 
 ### `SetupScreen` (`scenes/setup/`)
 A programmatic `Control` (no `.tscn`). Initialized via `init(db, on_start_callback)`. Presents: player count (2–4), per-player name, society picker, and leader picker, world size, map type (populated from `data/map_types.json`), pace, difficulty, and seed. On "Start Game" it creates a `SimFacade`, calls `facade.setup(...)` with the collected parameters, and fires `on_start_callback(facade, db)`. Society selection injects the chosen society's `starting_gold` and `starting_techs` into the player config; selecting a society also populates the leader picker with that society's leaders (every leader whose `faction` matches the society id, via `DataDB.get_society_leaders`), defaulting to the society's own `leader_id`. The chosen leader supplies the player's `leader_id` and `traits` (falling back to the society default when the picker is untouched).
 
 ### `Main` (`scenes/main.tscn` / `main.gd`)
-Root game scene. Wires `WorldView`, `HUD` sub-panels, `InputRouter`, and `HotseatManager` to the `SimFacade`. Exposes `init_with_facade(facade, db)` — call this **before** adding to the tree so `_ready()` skips the default hardcoded 2-player setup. Routes `screen_requested` signals to the appropriate full-screen nodes (`CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen`); the `OPEN_MENU` control toggles the `PauseMenu` overlay (Resume/Save/Load/New Game/Quit), whose Save/Load buttons defer to the shared `SaveLoadScreen`.
+Root game scene. Wires `WorldView`, `HUD` sub-panels (`MenuBar`, `TurnScoreBar`, `ResearchBar`, `SliderPanel`, `SelectionPanel`, `MessageLog`, `EndTurnButton`), `InputRouter`, `HotseatManager`, and the `Minimap` overlay to the `SimFacade`. Exposes `init_with_facade(facade, db)` — call this **before** adding to the tree so `_ready()` skips the default hardcoded 2-player setup. In solo/hotseat play it also wires a `TurnPrompts` node (start-of-turn "what now?" prompts for research and idle-city production). For remote multiplayer, `set_net_client(net_client)` attaches the client before tree entry; the `_wire_net_client` hook then connects `state_synced`/`game_over` signals to repaint the view when the server pushes new state (no local `HotseatManager` turn loop runs). Routes `screen_requested` signals to the appropriate full-screen nodes (`CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen`, `PauseMenu`); the `OPEN_MENU` control toggles the `PauseMenu` overlay (Resume/Save/Load/New Game/Controls/About/Quit), whose Save/Load buttons defer to the shared `SaveLoadScreen`. Also manages score/minimap/fog `TOGGLE_*` controls as pure presentation toggles.
 
 ### HUD (`scenes/hud/`)
-`hud.tscn` is a `VBoxContainer` containing: `TurnScoreBar`, `ResearchBar`, `SliderPanel`, `SelectionPanel`, `MessageLog`, `EndTurnButton`. Each panel's `.gd` is initialized with `init(facade, ...)` and reads facade state or subscribes to its signals.
+`hud.tscn` is a `VBoxContainer` containing: `MenuBar` (advisor button row — Science/Civics/Diplomacy/Finance/Military/Espionage/Religion/Corp/Domestic/Victory/Log/Pedia/Options, each sending `DO_CONTROL(OPEN_*)`), `TurnScoreBar`, `ResearchBar`, `SliderPanel`, `SelectionPanel`, `MessageLog`, `EndTurnButton`. Each panel's `.gd` is initialized with `init(facade, ...)` and reads facade state or subscribes to its signals. The `Minimap` is a separate `Control` overlay (`HUD/Minimap`) drawn in the lower-right corner. The `TurnPrompts` node (start-of-turn research/idle-city chain) is a child of `main.gd`, not inside `hud.tscn`; it is only wired in solo/hotseat play.
 
 ### World view (`scenes/world/`)
-`WorldView` renders the tile map and unit positions; `FogLayer` overlays fog-of-war; `Minimap` draws the territory overview. All three are initialized with `init(facade)`.
+`WorldView` renders the tile map and unit positions; `FogLayer` overlays fog-of-war (rebuilds per-player, dims explored-but-not-visible tiles). Both are initialized with `init(facade)`. The `Minimap` is a HUD overlay (`scenes/hud/minimap.gd`) that reads facade state + `FogLayer` to draw a always-visible overview in the lower-right corner.
 
 ### Full-screen overlays (`scenes/screens/`)
-`CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen`, `PauseMenu` — each exposes a `show_screen()` entry point and reads state through the facade.
+`CityScreen`, `TechChooser`, `PolicyScreen`, `DiplomacyScreen`, `SaveLoadScreen`, `PauseMenu` — each exposes a `show_screen()` entry point and reads state through the facade. The `PauseMenu` includes Resume, Save, Load, New Game, Controls, About, and Quit buttons; Save/Load defer to the shared `SaveLoadScreen`. **Controls** (`controls_screen.gd`) and **About** (`about_screen.gd`) are simple read-only overlays built lazily from the pause menu. In the start menu, `about_screen.gd` is also opened by the About button (no game state needed). The **Espionage mission popup** (`espionage_menu.gd`) is a full-screen popup opened by the `EspionageScreen` when the player clicks "Select Mission…".
 
 The simple read-only advisor/info screens (`OPEN_RELIGION`, `OPEN_CORPORATION`, `OPEN_TURN_LOG`, `OPEN_DOMESTIC_ADVISOR`, `OPEN_VICTORY_PROGRESS`, `OPEN_OPTIONS`, plus `OPEN_FINANCE`/`OPEN_MILITARY`/`OPEN_ESPIONAGE`/`OPEN_ENCYCLOPEDIA`) share a `info_screen.gd` scaffold — opaque backdrop, scrolled text labels, Close — and override `_populate(vbox)`. They carry no `.tscn` node; `main.gd:_init_extra_screens()` instantiates each programmatically under the `Screens` node, keyed by the `ControlType` that opens it (via the facade's `screen_requested` signal). The §3.1 control vocabulary that opens them is documented in `docs/planning/designgaps.md` §3.
 
@@ -229,10 +232,13 @@ gs.current_player_id
 gs.winning_alliance_id
 gs.founded_beliefs / gs.founded_econ_orgs / gs.endgame_project_stages
 gs.assembly                      §7.2 world-assembly state (body, resident, open session, tallies)
-gs.pending_assembly_events / gs.pending_flips / gs.pending_era_advances / gs.pending_wild_events
+gs.pending_assembly_events
+gs.pending_flips / gs.pending_era_advances / gs.pending_wild_events
+gs.pending_tech_completions / gs.pending_great_people
+gs.pending_productions / gs.pending_growth / gs.pending_improvements
 ```
 
-The four `pending_*` arrays are an outbox: pipeline phases that run with no active player (world step) or that need to raise UI notifications push records onto them, and `SimFacade` drains each into the matching signal (`assembly_event`, `city_flipped`, `era_advanced`, plus wild-combat/raze signals) at the next opportunity. ID counters (`_next_unit_id` etc.) are also serialized so IDs remain stable across save/load.
+The nine `pending_*` arrays are an outbox: pipeline phases push records onto them, and `SimFacade` drains each into the matching signal (`assembly_event`, `city_flipped`, `era_advanced`, `technology_completed`, `unit_created`/`settlement_founded`, `settlement_production`, `settlement_grown`) at the next opportunity. ID counters (`_next_unit_id` etc.) are also serialized so IDs remain stable across save/load.
 
 ### `TurnEngine`
 Implements §3 as three static functions called in sequence. Every phase first consults `hooks.run(IDs.Phase.X, gs)` — if a hook returns `true` the built-in is skipped entirely.
@@ -317,6 +323,7 @@ Tracks war state (`at_war_with`), contacts, subordination, shared research store
 - **`Pollution`** — per-settlement accumulation each turn; per-tile RNG degradation chain
 - **`WinConditions`** — stateless evaluation against `gs`; returns winning `alliance_id` or −1
 - **`Scoring`** — weighted sum of (land tiles, population, technology count) per alliance
+- **`Nuclear`** — §5.7 nuclear weapons & radioactive fallout (pure static, provisional): `is_nuke(db, unit)` checks the `nuke` tag; `strike(gs, x, y, strength, radius)` detonates over a target tile — area damage to all units/settlements in the blast radius, ground stripping (forest/jungle/improvement removal), and Fallout feature contamination. The meltdown/`contain()` world-tick runs inside `TurnEngine.world_step`. All the integer-math chances and magnitudes live in `data/constants.json`; every stochastic step draws from the shared `gs.rng`
 - **`Hooks`** — `register(IDs.Phase.X, obj, "method_name")` stores a FuncRef; `run(phase, gs, args)` fires each registered handler in order, returning true if any handles it
 
 ---
@@ -395,10 +402,15 @@ Player calls: facade.apply_command(Commands.end_turn(player_id))
        │    └─ resets unit movement flags
        │
        └─ (if last player) TurnEngine.world_step(gs, hooks)
-            ├─ WildForces.spawn_turn         → gs.units (appended)
-            ├─ Pollution.accumulate/degrade  → tile.pollution, tile.terrain_id
-            ├─ gs.turn_number += 1
-            └─ WinConditions.check_all       → gs.winning_alliance_id
+             ├─ resolve/expire trades        → alliance.pending_trades
+             ├─ alliance research stores
+             ├─ tile upkeep                  → player.treasury
+             ├─ WildForces + WildAI.run      → gs.units (appended), gs.pending_wild_events
+             ├─ Pollution + Nuclear.meltdown → tile.pollution, tile.terrain_id, fallout
+             ├─ Assembly.world_tick          → gs.pending_assembly_events
+             ├─ gs.turn_number += 1
+             ├─ advance current_player_id
+             └─ WinConditions.check_all       → gs.winning_alliance_id
 ```
 
 When `apply_command(Commands.move_stack(...))` triggers combat:
