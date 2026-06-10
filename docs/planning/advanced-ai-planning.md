@@ -6,8 +6,10 @@
 > `feat/phase-c-ai-focus`; Phase D (tuning/docs/hardening) on
 > `feat/phase-d-ai-tuning` — all merged to `main`. Supersedes nothing — builds on
 > the existing `PlayerAI` (`src/api/player_ai.gd`), which stays a pure static
-> `SimFacade` *client* throughout. This document is the design record and the step
-> list; the live code is authoritative.
+> `SimFacade` *client* throughout. This document is the **planning record and the
+> step list** (the as-built history of how the AI was developed). The settled
+> design is now written up as `docs/design/ai-design.md` — read that for the
+> current three-layer model; the live code is authoritative over both.
 
 ## Context
 

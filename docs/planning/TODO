@@ -65,8 +65,8 @@ terrain id is unmistakably a bug rather than looking like a mountain.
 Major features
 [done]add debug mode (only enabled in debug build, extra logging, special debug menu showing debug log and allow modifying game values, standard console allowing same value modification)
 [done]Add map generation
-Add player AI [DONE — simple version: PlayerAI in src/api/player_ai.gd; per-player AI toggle in the setup screen; cheapest-first production/research, latest civics, 50% garrison / 50% random units. Future: smarter strategy, diplomacy, combat targeting.]
-Add advanced player AI (and remove simple AI)
+Add player AI [DONE — PlayerAI in src/api/player_ai.gd; per-player AI toggle in the setup screen.]
+Add advanced player AI (and remove simple AI) [DONE — three-layer model (handicap × competent brain × trait focus); see docs/design/ai-design.md (design) and docs/planning/advanced-ai-planning.md (build history). Future: diplomacy, long-range invasions.]
 [done]Add remote multiplayer
 Add mod support??
 Maximize accessibility (visual - simple, readable, audio - extra but not necessary feedback, tactile - both keyboard only or pointer only or both)
