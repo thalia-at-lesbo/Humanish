@@ -172,6 +172,10 @@ static func mission_move_to(player_id: int, unit_id: int,
 static func mission_build_road(player_id: int, unit_id: int) -> Dictionary:
 	return {"type": IDs.CommandType.MISSION_BUILD_ROAD, "player_id": player_id, "unit_id": unit_id}
 
+# Chop/clear the removable feature on the worker's current tile (§4.11).
+static func mission_clear_feature(player_id: int, unit_id: int) -> Dictionary:
+	return {"type": IDs.CommandType.MISSION_CLEAR_FEATURE, "player_id": player_id, "unit_id": unit_id}
+
 static func mission_skip_turn(player_id: int, unit_id: int) -> Dictionary:
 	return {"type": IDs.CommandType.MISSION_SKIP_TURN, "player_id": player_id, "unit_id": unit_id}
 

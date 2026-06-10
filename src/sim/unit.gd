@@ -50,6 +50,9 @@ var transported_by: int = -1   # unit ID of transport, -1 if on land/self
 # Worker state
 var build_turns_left: int = 0
 var building_improvement: String = ""
+# Chop/clear order (§4.11): the removable feature the worker is felling on its
+# tile; uses build_turns_left for timing, mutually exclusive with a build.
+var clearing_feature: String = ""
 
 # Persistent move order (§3.3 go-to mission): when a move cannot reach its target
 # this turn, the destination is remembered here so the unit keeps travelling toward
@@ -158,6 +161,7 @@ func serialize() -> Dictionary:
 		"cargo": cargo.duplicate(), "transported_by": transported_by,
 		"build_turns_left": build_turns_left,
 		"building_improvement": building_improvement,
+		"clearing_feature": clearing_feature,
 		"goto_x": goto_x, "goto_y": goto_y,
 		"has_moved": has_moved, "has_attacked": has_attacked,
 		"is_fortified": is_fortified, "is_wild": is_wild,
@@ -187,6 +191,7 @@ static func deserialize(d: Dictionary):
 	u.transported_by = int(d.get("transported_by", -1))
 	u.build_turns_left = int(d.get("build_turns_left", 0))
 	u.building_improvement = str(d.get("building_improvement", ""))
+	u.clearing_feature = str(d.get("clearing_feature", ""))
 	u.goto_x = int(d.get("goto_x", -1))
 	u.goto_y = int(d.get("goto_y", -1))
 	u.has_moved = bool(d.get("has_moved", false))

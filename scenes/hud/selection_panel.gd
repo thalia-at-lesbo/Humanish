@@ -303,9 +303,26 @@ func _add_worker_buttons(unit, gs) -> void:
 		btn.connect("pressed", self, "_on_build_improvement_pressed", [unit.id, imp_id])
 		add_child(btn)
 
+	# Chop/clear (§4.11): a removable surface feature on the tile can be felled on
+	# its own (a forest yields production to the nearest city; jungle just clears).
+	if feature_id != "":
+		var feat: Dictionary = db.get_feature(feature_id)
+		if bool(feat.get("removable", false)):
+			var feat_name: String = str(feat.get("name", feature_id.capitalize()))
+			var chop_btn: Button = Button.new()
+			chop_btn.text = "Chop " + feat_name
+			chop_btn.connect("pressed", self, "_on_clear_feature_pressed", [unit.id])
+			add_child(chop_btn)
+
 func _on_build_improvement_pressed(unit_id: int, improvement_id: String) -> void:
 	_facade.apply_command(Commands.build_improvement(
 		_facade.get_state().current_player_id, unit_id, improvement_id))
+	rebuild()
+
+# Chop/clear the removable feature on the worker's tile (§4.11).
+func _on_clear_feature_pressed(unit_id: int) -> void:
+	_facade.apply_command(Commands.mission_clear_feature(
+		_facade.get_state().current_player_id, unit_id))
 	rebuild()
 
 # Issue 13: Start Explore mission on a scout/recon unit.

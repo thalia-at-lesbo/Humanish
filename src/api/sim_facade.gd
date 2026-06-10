@@ -304,6 +304,7 @@ func apply_command(cmd: Dictionary) -> bool:
 		IDs.CommandType.MISSION_MOVE_TO_UNIT, IDs.CommandType.MISSION_RECON, \
 		IDs.CommandType.MISSION_AIR_PATROL, IDs.CommandType.MISSION_SEA_PATROL, \
 		IDs.CommandType.MISSION_CLEAN_FALLOUT, \
+		IDs.CommandType.MISSION_CLEAR_FEATURE, \
 		IDs.CommandType.MISSION_SLEEP_UNTIL_HEALED, \
 		IDs.CommandType.MISSION_FORTIFY_UNTIL_HEALED, \
 		IDs.CommandType.MISSION_EXPLORE:
@@ -524,8 +525,9 @@ func _cmd_move_stack(cmd: Dictionary) -> bool:
 			u.is_sleep_until_healed = false
 			u.is_fortify_until_healed = false
 			# A worker that leaves its tile abandons any in-progress improvement
-			# build, so the build never completes on the wrong tile.
+			# build or feature chop, so neither completes on the wrong tile.
 			u.building_improvement = ""
+			u.clearing_feature = ""
 			u.build_turns_left = 0
 			# Carried units ride along with their transport (§5.2).
 			for cid in u.cargo:
@@ -1751,6 +1753,7 @@ func _cmd_unit_command(cmd: Dictionary) -> bool:
 			u.movement_left = 0
 		IDs.CommandType.UNIT_CANCEL_ORDERS:
 			u.building_improvement = ""
+			u.clearing_feature = ""
 			u.build_turns_left = 0
 			u.is_sleeping = false
 			u.is_sleep_until_healed = false
@@ -1903,6 +1906,23 @@ func _cmd_mission(cmd: Dictionary) -> bool:
 			if ftile == null or ftile.feature_id != "fallout":
 				return false
 			ftile.feature_id = ""
+			u.has_moved = true
+			u.movement_left = 0
+		IDs.CommandType.MISSION_CLEAR_FEATURE:
+			# A worker-type unit chops/clears the removable feature on its tile over
+			# a few turns; the clearing (and any forest chop yield) is applied when the
+			# order completes in TurnEngine._advance_worker_chop (§4.11).
+			if not _db.get_unit(u.unit_type_id).get("can_build", false):
+				return false
+			var ctile: Tile = _gs.map.get_tile(u.x, u.y)
+			if ctile == null or ctile.feature_id == "":
+				return false
+			var cfeat: Dictionary = _db.get_feature(ctile.feature_id)
+			if not bool(cfeat.get("removable", false)):
+				return false
+			u.clearing_feature = ctile.feature_id
+			u.build_turns_left = int(cfeat.get("clear_turns",
+				_db.get_constant("chop_default_turns", 4)))
 			u.has_moved = true
 			u.movement_left = 0
 		IDs.CommandType.MISSION_SLEEP_UNTIL_HEALED:
@@ -2208,7 +2228,8 @@ func cycle_idle_units(workers_only: bool = false) -> void:
 		if u.has_moved or u.is_fortified or u.is_sentry or u.is_patrolling \
 				or u.is_healing or u.is_sleeping \
 				or u.is_sleep_until_healed or u.is_fortify_until_healed \
-				or u.is_exploring or u.building_improvement != "":
+				or u.is_exploring or u.building_improvement != "" \
+				or u.clearing_feature != "":
 			continue
 		if workers_only and not _db.get_unit(u.unit_type_id).get("can_build", false):
 			continue
@@ -2330,7 +2351,8 @@ func get_end_turn_state() -> int:
 		if u.owner_player_id == _gs.current_player_id and not u.has_moved \
 				and not u.is_fortified and not u.is_sleeping \
 				and not u.is_sleep_until_healed and not u.is_fortify_until_healed \
-				and not u.is_exploring and u.building_improvement == "":
+				and not u.is_exploring and u.building_improvement == "" \
+				and u.clearing_feature == "":
 			return 2
 	return 0
 
@@ -2590,20 +2612,30 @@ func _drain_improvement_completions() -> void:
 		return
 	for entry in _gs.pending_improvements:
 		if int(entry.get("player_id", -1)) == _gs.current_player_id:
-			var imp_id: String = str(entry.get("improvement_id", ""))
-			var imp_name: String = str(_db.get_improvement(imp_id).get("name", imp_id.capitalize()))
-			var msg: String = imp_name + " completed at (" \
-				+ str(int(entry.get("x", 0))) + ", " + str(int(entry.get("y", 0))) + ")."
-			# A cleared vegetation feature, and any chop production it sent to a city,
-			# are appended so the felled forest is visible in the log.
+			var loc: String = "(" + str(int(entry.get("x", 0))) + ", " \
+				+ str(int(entry.get("y", 0))) + ")"
 			var cleared: String = str(entry.get("cleared_feature", ""))
-			if cleared != "":
-				var feat_name: String = str(_db.get_feature(cleared).get("name", cleared.capitalize()))
-				msg += " " + feat_name + " cleared"
-				var chop: int = int(entry.get("chop_yield", 0))
+			var feat_name: String = str(_db.get_feature(cleared).get("name", cleared.capitalize())) \
+				if cleared != "" else ""
+			var chop: int = int(entry.get("chop_yield", 0))
+			var imp_id: String = str(entry.get("improvement_id", ""))
+			var msg: String
+			if imp_id == "":
+				# A standalone chop/clear order (§4.11): no improvement was placed.
+				msg = feat_name + " cleared at " + loc
 				if chop > 0:
 					msg += " (+" + str(chop) + " production)"
 				msg += "."
+			else:
+				var imp_name: String = str(_db.get_improvement(imp_id).get("name", imp_id.capitalize()))
+				msg = imp_name + " completed at " + loc + "."
+				# A cleared feature, and any chop production it sent to a city, are
+				# appended so the felled forest is visible in the log.
+				if cleared != "":
+					msg += " " + feat_name + " cleared"
+					if chop > 0:
+						msg += " (+" + str(chop) + " production)"
+					msg += "."
 			_add_notification(msg, "info")
 	_gs.pending_improvements = []
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)

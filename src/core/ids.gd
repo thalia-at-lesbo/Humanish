@@ -106,7 +106,10 @@ enum CommandType {
     # permanent_alliances optional rule to be active in GameState).
     PROPOSE_PERMANENT_ALLIANCE = 58,
     # Move an item in the city production queue to a new position (§11 city screen).
-    MOVE_PRODUCTION_ITEM = 59
+    MOVE_PRODUCTION_ITEM = 59,
+    # Chop/clear a removable surface feature (forest/jungle) off a worker's tile
+    # without placing an improvement; a felled forest yields production (§4.11).
+    MISSION_CLEAR_FEATURE = 60
 }
 
 # Win condition types
@@ -179,7 +182,7 @@ enum UnitMission {
     SENTRY = 11, HEAL = 12, MOVE_TO_UNIT = 13, RECON = 14,
     AIR_PATROL = 15, SEA_PATROL = 16, CLEAN_FALLOUT = 17,
     SLEEP_UNTIL_HEALED = 18, FORTIFY_UNTIL_HEALED = 19,
-    EXPLORE = 20
+    EXPLORE = 20, CLEAR_FEATURE = 21
 }
 
 # Phase flags for hooks

@@ -237,6 +237,97 @@ func test_clearing_forest_without_owned_city_does_not_crash() -> void:
 	assert_eq(tile.feature_id, "",
 		"Forest is cleared even when the player has no city to receive the chop")
 
+# ── Standalone chop/clear order (§4.11) ──────────────────────────────────────
+#
+# A worker can chop/clear a removable feature on its own, placing no improvement.
+# The MISSION_CLEAR_FEATURE command sets clearing_feature + a timer; completion
+# runs through TurnEngine._advance_worker_chop.
+
+func _chop_done(gs, w, feat_id) -> void:
+	w.clearing_feature = feat_id
+	w.build_turns_left = 1
+	TurnEngine._advance_worker_chop(gs, w)
+
+func test_clear_feature_command_sets_timed_order() -> void:
+	var gs = make_gs(1)
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	var facade = bare_facade(gs)
+	gs.current_player_id = 1
+	assert_true(facade.apply_command(Commands.mission_clear_feature(1, w.id)),
+		"A worker on a removable feature accepts the chop order")
+	assert_eq(w.clearing_feature, "forest", "The order records the feature being cleared")
+	assert_eq(w.build_turns_left, 4, "Forest clear_turns (4) seeds the timer")
+	assert_true(w.has_moved, "Issuing the order consumes the worker's turn")
+
+func test_clear_feature_command_rejected_for_non_worker() -> void:
+	var gs = make_gs(1)
+	var warrior = make_unit(gs, "warrior", 1, 6, 5)
+	gs.map.get_tile(6, 5).feature_id = "forest"
+	var facade = bare_facade(gs)
+	gs.current_player_id = 1
+	assert_false(facade.apply_command(Commands.mission_clear_feature(1, warrior.id)),
+		"A non-worker cannot chop")
+
+func test_clear_feature_command_rejected_on_bare_tile() -> void:
+	var gs = make_gs(1)
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	gs.map.get_tile(6, 5).feature_id = ""             # nothing to clear
+	var facade = bare_facade(gs)
+	gs.current_player_id = 1
+	assert_false(facade.apply_command(Commands.mission_clear_feature(1, w.id)),
+		"A tile with no removable feature rejects the chop order")
+
+func test_standalone_chop_clears_forest_and_chops_no_improvement() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	tile.owner_player_id = 1
+	var before: int = city.production_store
+	_chop_done(gs, w, "forest")
+	assert_eq(tile.feature_id, "", "The chop fells the forest")
+	assert_eq(tile.improvement_id, "", "A standalone chop places no improvement")
+	assert_eq(city.production_store - before, 20,
+		"The felled forest still delivers its chop yield")
+	assert_eq(w.clearing_feature, "", "The chop order clears on completion")
+
+func test_standalone_chop_jungle_yields_nothing() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "jungle"
+	tile.owner_player_id = 1
+	var before: int = city.production_store
+	_chop_done(gs, w, "jungle")
+	assert_eq(tile.feature_id, "", "The chop clears the jungle")
+	assert_eq(city.production_store - before, 0, "Jungle delivers no chop production")
+
+func test_moving_cancels_a_chop_order() -> void:
+	var gs = make_gs(1)
+	gs.get_player(1).technologies = gs.db.technologies.keys().duplicate()
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	var facade = bare_facade(gs)
+	gs.current_player_id = 1
+	assert_true(facade.apply_command(Commands.mission_clear_feature(1, w.id)),
+		"Chop order accepted")
+	w.has_moved = false  # free the worker so it can be moved this test turn
+	w.movement_left = w.movement_total
+	facade.apply_command(Commands.mission_move_to(1, w.id, 7, 5))
+	assert_eq(w.clearing_feature, "",
+		"Walking away cancels the chop so it cannot complete on the wrong tile")
+	assert_eq(gs.map.get_tile(6, 5).feature_id, "forest",
+		"The abandoned forest is left standing")
+
 func test_worker_makes_no_build_progress_on_the_issuing_turn() -> void:
 	# On the turn the build is issued the worker has already acted (has_moved),
 	# so the first end-turn must not decrement the build counter.
