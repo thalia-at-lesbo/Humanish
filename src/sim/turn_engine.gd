@@ -865,16 +865,73 @@ static func _advance_worker_build(gs: GameState, u: Unit) -> void:
 		return
 	var tile: Tile = gs.map.get_tile(u.x, u.y)
 	if tile != null:
-		tile.improvement_id = u.building_improvement
+		var imp_id: String = u.building_improvement
+		var entry: Dictionary = {
+			"player_id": u.owner_player_id,
+			"improvement_id": imp_id,
+			"x": u.x, "y": u.y
+		}
+		# Clearing (§5): a removable vegetation feature (forest/jungle) is stripped
+		# when the new improvement does not preserve it. A felled forest delivers its
+		# chop_yield as production to the nearest owned city, scaled down by distance.
+		_apply_feature_clearing(gs, u, tile, imp_id, entry)
+		tile.improvement_id = imp_id
 		# Reset cottage-line maturation so a freshly placed improvement starts fresh.
 		tile.improvement_age = 0
-		gs.pending_improvements.append({
-			"player_id": u.owner_player_id,
-			"improvement_id": u.building_improvement,
-			"x": u.x, "y": u.y
-		})
+		gs.pending_improvements.append(entry)
 	u.building_improvement = ""
 	u.build_turns_left = 0
+
+# When an improvement completes on a tile carrying a removable feature (forest,
+# jungle), the feature is cleared unless the improvement preserves it — camps,
+# lumbermills, forest preserves and forts keep their forest (flagged
+# preserves_feature in data/improvements.json), as does any improvement that
+# requires that feature. Clearing a forest delivers its chop_yield to the nearest
+# owned city as production, reduced by chop_falloff_per_tile for each tile of
+# distance (so it falls to zero far from any city); jungle has no chop_yield and
+# clears for nothing. Records the outcome on `entry` for the facade to surface.
+static func _apply_feature_clearing(gs: GameState, u: Unit, tile: Tile,
+		imp_id: String, entry: Dictionary) -> void:
+	var feat_id: String = tile.feature_id
+	if feat_id == "":
+		return
+	var feat: Dictionary = gs.db.get_feature(feat_id)
+	if not bool(feat.get("removable", false)):
+		return
+	var imp: Dictionary = gs.db.get_improvement(imp_id)
+	if bool(imp.get("preserves_feature", false)) \
+			or str(imp.get("requires_feature", "")) == feat_id:
+		return
+	tile.feature_id = ""
+	entry["cleared_feature"] = feat_id
+	var chop: int = int(feat.get("chop_yield", 0))
+	if chop <= 0:
+		return
+	var city: Settlement = _nearest_owned_city(gs, u.owner_player_id, u.x, u.y)
+	if city == null:
+		return
+	var d: int = gs.map.distance(u.x, u.y, city.x, city.y)
+	var falloff: int = gs.db.get_constant("chop_falloff_per_tile", 4)
+	var delivered: int = chop - (d - 1) * falloff
+	if delivered <= 0:
+		return
+	city.production_store += delivered
+	entry["chop_yield"] = delivered
+	entry["chop_city_id"] = city.id
+
+# Nearest settlement owned by `player_id` to (x, y), by map distance; null if the
+# player holds no city. Deterministic (settlement order, integer distance, no RNG).
+static func _nearest_owned_city(gs: GameState, player_id: int, x: int, y: int) -> Settlement:
+	var best: Settlement = null
+	var best_d: int = 0
+	for s in gs.settlements:
+		if s.owner_player_id != player_id:
+			continue
+		var d: int = gs.map.distance(x, y, s.x, s.y)
+		if best == null or d < best_d:
+			best = s
+			best_d = d
+	return best
 
 static func _settlement_culture(gs: GameState, s: Settlement, player: Player) -> void:
 	var db: DataDB = gs.db

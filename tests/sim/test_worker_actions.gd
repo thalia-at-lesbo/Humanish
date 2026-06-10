@@ -98,6 +98,128 @@ func test_worker_build_completes_and_places_improvement() -> void:
 	assert_eq(w.build_turns_left, 0,
 		"build_turns_left should be 0 after completion")
 
+# ── Forest/jungle clearing & chop (feature/worker-forest-clearing) ───────────
+#
+# Completing a non-preserving improvement on a forested/jungle tile strips the
+# feature; a felled forest sends chop_yield production to the nearest owned city,
+# reduced by chop_falloff_per_tile per tile of distance. These drive the
+# completion helper directly to avoid the full end-turn pipeline consuming the
+# delivered production.
+
+func _complete_build(gs, w, imp_id) -> void:
+	w.building_improvement = imp_id
+	w.build_turns_left = 1
+	TurnEngine._advance_worker_build(gs, w)
+
+func test_building_clears_forest_and_chops_to_nearest_city() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)        # city at (5,5)
+	var w = make_unit(gs, "worker", 1, 6, 5)          # distance 1 from city
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	var before: int = city.production_store
+	_complete_build(gs, w, "farm")
+	assert_eq(tile.improvement_id, "farm", "Farm should be placed")
+	assert_eq(tile.feature_id, "",
+		"Forest is cleared when a non-preserving improvement completes")
+	# chop_yield 20, distance 1 → 20 - (1-1)*4 = 20 (full).
+	assert_eq(city.production_store - before, 20,
+		"The adjacent city receives the full chop yield")
+
+func test_chop_yield_falls_off_with_distance() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var w = make_unit(gs, "worker", 1, 8, 5)          # distance 3 from city
+	var tile = gs.map.get_tile(8, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	var before: int = city.production_store
+	_complete_build(gs, w, "farm")
+	# 20 - (3-1)*4 = 12.
+	assert_eq(city.production_store - before, 12,
+		"Chop yield is reduced by distance to the receiving city")
+
+func test_distant_chop_delivers_nothing() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var w = make_unit(gs, "worker", 1, 12, 5)         # distance 7 → past falloff
+	var tile = gs.map.get_tile(12, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	var before: int = city.production_store
+	_complete_build(gs, w, "farm")
+	assert_eq(tile.feature_id, "",
+		"A forest far from any city is still cleared")
+	assert_eq(city.production_store - before, 0,
+		"Beyond the falloff range the chop delivers no production")
+
+func test_nearest_city_receives_chop() -> void:
+	var gs = make_gs(1)
+	var far = make_settlement(gs, 1, 5, 5, 3)         # distance 4
+	var near = make_settlement(gs, 1, 8, 5, 3)        # distance 1
+	var w = make_unit(gs, "worker", 1, 9, 5)
+	var tile = gs.map.get_tile(9, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	var far_before: int = far.production_store
+	var near_before: int = near.production_store
+	_complete_build(gs, w, "farm")
+	assert_eq(near.production_store - near_before, 20, "The nearer city is chopped to")
+	assert_eq(far.production_store - far_before, 0, "The farther city receives nothing")
+
+func test_camp_preserves_forest_and_gives_no_chop() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	tile.resource_id = "deer"                         # camp wants a resource
+	var before: int = city.production_store
+	_complete_build(gs, w, "camp")
+	assert_eq(tile.feature_id, "forest",
+		"A preserves_feature improvement (camp) keeps the forest")
+	assert_eq(city.production_store - before, 0,
+		"A preserved forest is not chopped")
+
+func test_lumbermill_requires_and_keeps_forest() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	var before: int = city.production_store
+	_complete_build(gs, w, "lumbermill")
+	assert_eq(tile.feature_id, "forest",
+		"A lumbermill keeps the forest it is built on")
+	assert_eq(city.production_store - before, 0, "No chop for a preserved forest")
+
+func test_clearing_jungle_yields_no_production() -> void:
+	var gs = make_gs(1)
+	var city = make_settlement(gs, 1, 5, 5, 3)
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "jungle"
+	var before: int = city.production_store
+	_complete_build(gs, w, "farm")
+	assert_eq(tile.feature_id, "",
+		"Jungle is cleared by a non-preserving improvement")
+	assert_eq(city.production_store - before, 0,
+		"Jungle has no chop_yield, so clearing it delivers nothing")
+
+func test_clearing_forest_without_owned_city_does_not_crash() -> void:
+	var gs = make_gs(1)                                # no settlements at all
+	var w = make_unit(gs, "worker", 1, 6, 5)
+	var tile = gs.map.get_tile(6, 5)
+	tile.terrain_id = "grassland"
+	tile.feature_id = "forest"
+	_complete_build(gs, w, "farm")
+	assert_eq(tile.feature_id, "",
+		"Forest is cleared even when the player has no city to receive the chop")
+
 func test_worker_makes_no_build_progress_on_the_issuing_turn() -> void:
 	# On the turn the build is issued the worker has already acted (has_moved),
 	# so the first end-turn must not decrement the build counter.

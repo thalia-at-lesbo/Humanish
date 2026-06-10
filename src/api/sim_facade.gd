@@ -2592,8 +2592,19 @@ func _drain_improvement_completions() -> void:
 		if int(entry.get("player_id", -1)) == _gs.current_player_id:
 			var imp_id: String = str(entry.get("improvement_id", ""))
 			var imp_name: String = str(_db.get_improvement(imp_id).get("name", imp_id.capitalize()))
-			_add_notification(imp_name + " completed at ("
-				+ str(int(entry.get("x", 0))) + ", " + str(int(entry.get("y", 0))) + ").", "info")
+			var msg: String = imp_name + " completed at (" \
+				+ str(int(entry.get("x", 0))) + ", " + str(int(entry.get("y", 0))) + ")."
+			# A cleared vegetation feature, and any chop production it sent to a city,
+			# are appended so the felled forest is visible in the log.
+			var cleared: String = str(entry.get("cleared_feature", ""))
+			if cleared != "":
+				var feat_name: String = str(_db.get_feature(cleared).get("name", cleared.capitalize()))
+				msg += " " + feat_name + " cleared"
+				var chop: int = int(entry.get("chop_yield", 0))
+				if chop > 0:
+					msg += " (+" + str(chop) + " production)"
+				msg += "."
+			_add_notification(msg, "info")
 	_gs.pending_improvements = []
 	_dirty.set_dirty(IDs.DirtyRegion.WORLD)
 	_dirty.set_dirty(IDs.DirtyRegion.HUD_GROUPS)
